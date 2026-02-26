@@ -14,6 +14,10 @@ STATE_DIR=${STATE_OUTPUT#CODEX_STARTED:}
 
 ## 3) Poll
 
+```bash
+POLL_OUTPUT=$(node "$RUNNER" poll "$STATE_DIR")
+```
+
 Adaptive intervals — start slow, speed up:
 
 **Round 1 (first review):**
