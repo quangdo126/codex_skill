@@ -22,10 +22,14 @@ const __dirname = path.dirname(__filename);
 const packageRoot = path.resolve(__dirname, '..');
 
 const skillPackDir = path.join(packageRoot, 'skill-packs', 'codex-review');
-const installDir = path.join(os.homedir(), '.claude', 'skills', 'codex-review');
-const runnerPath = path.join(installDir, 'scripts', 'codex-runner.js');
+const skillsRoot = path.join(os.homedir(), '.claude', 'skills');
+const runnerDir = path.join(skillsRoot, 'codex-review');
+const runnerPath = path.join(runnerDir, 'scripts', 'codex-runner.js');
 
 const SKILLS = ['codex-plan-review', 'codex-impl-review', 'codex-think-about'];
+
+// All directories managed by this installer (runner + 3 skills)
+const MANAGED_DIRS = ['codex-review', ...SKILLS];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,16 +58,15 @@ function copyDirSync(src, dest) {
 // Build staging directory
 // ---------------------------------------------------------------------------
 
-const skillsParent = path.dirname(installDir);
 const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const stagingDir = path.join(skillsParent, `.codex-review-staging-${uid}`);
+const stagingDir = path.join(skillsRoot, `.codex-staging-${uid}`);
 
 try {
   fs.mkdirSync(stagingDir, { recursive: true });
 
-  // 1. Copy codex-runner.js
+  // 1. Copy codex-runner.js into staging/codex-review/scripts/
   const runnerSrc = path.join(skillPackDir, 'scripts', 'codex-runner.js');
-  const runnerDest = path.join(stagingDir, 'scripts', 'codex-runner.js');
+  const runnerDest = path.join(stagingDir, 'codex-review', 'scripts', 'codex-runner.js');
   fs.mkdirSync(path.dirname(runnerDest), { recursive: true });
   fs.copyFileSync(runnerSrc, runnerDest);
 
@@ -77,7 +80,7 @@ try {
 
   for (const skill of SKILLS) {
     const skillSrcDir = path.join(skillPackDir, 'skills', skill);
-    const skillDestDir = path.join(stagingDir, 'skills', skill);
+    const skillDestDir = path.join(stagingDir, skill);
     fs.mkdirSync(skillDestDir, { recursive: true });
 
     // Read template SKILL.md, inject runner path
@@ -102,46 +105,56 @@ try {
 
   // 3. Verify runner works
   console.log('Verifying codex-runner.js ...');
-  const runnerTestPath = path.join(stagingDir, 'scripts', 'codex-runner.js');
+  const runnerTestPath = path.join(stagingDir, 'codex-review', 'scripts', 'codex-runner.js');
   const versionOutput = execFileSync(process.execPath, [runnerTestPath, 'version'], {
     encoding: 'utf8',
     timeout: 10_000,
   }).trim();
   console.log(`  codex-runner.js version: ${versionOutput}`);
 
-  // 4. Atomic swap: backup old → move staging → cleanup
-  let backupDir = null;
+  // 4. Atomic swap per directory: backup old → move staging → cleanup
+  fs.mkdirSync(skillsRoot, { recursive: true });
+  const backups = [];
   try {
-    if (fs.existsSync(installDir)) {
-      backupDir = path.join(skillsParent, `.codex-review-backup-${uid}`);
-      fs.renameSync(installDir, backupDir);
+    for (const dir of MANAGED_DIRS) {
+      const target = path.join(skillsRoot, dir);
+      const staged = path.join(stagingDir, dir);
+      if (fs.existsSync(target)) {
+        const backup = path.join(skillsRoot, `.${dir}-backup-${uid}`);
+        fs.renameSync(target, backup);
+        backups.push({ dir, target, backup });
+      }
+      fs.renameSync(staged, target);
     }
-    fs.renameSync(stagingDir, installDir);
   } catch (err) {
-    // Swap failed → restore backup
-    if (backupDir && fs.existsSync(backupDir) && !fs.existsSync(installDir)) {
-      fs.renameSync(backupDir, installDir);
-    }
-    // Cleanup staging if still present
-    if (fs.existsSync(stagingDir)) {
-      fs.rmSync(stagingDir, { recursive: true, force: true });
+    // Swap failed → restore all backups
+    for (const { target, backup } of backups) {
+      if (fs.existsSync(backup) && !fs.existsSync(target)) {
+        fs.renameSync(backup, target);
+      }
     }
     throw new Error(`Installation failed: ${err.message}`);
   }
 
-  // Cleanup backup (non-critical — install already succeeded)
-  if (backupDir) {
+  // Cleanup backups and empty staging dir (non-critical — install already succeeded)
+  for (const { backup } of backups) {
     try {
-      fs.rmSync(backupDir, { recursive: true, force: true });
+      fs.rmSync(backup, { recursive: true, force: true });
     } catch {
-      console.warn(`Warning: could not remove backup at ${backupDir}`);
+      console.warn(`Warning: could not remove backup at ${backup}`);
     }
+  }
+  try {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+  } catch {
+    // staging dir may already be gone
   }
 
   // 5. Success message
   console.log('');
   console.log('codex-review skills installed successfully!');
-  console.log(`  Location: ${installDir}`);
+  console.log(`  Runner:  ${runnerDir}`);
+  console.log(`  Skills:  ${skillsRoot}/codex-{plan-review,impl-review,think-about}`);
   console.log('');
   console.log('Skills available in Claude Code:');
   console.log('  /codex-plan-review  — debate plans before implementation');

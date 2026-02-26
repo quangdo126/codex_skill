@@ -21,10 +21,11 @@ npx github:lploc94/codex_skill
 ```
 
 ### What it does
-1. Copies `codex-runner.js` to `~/.claude/skills/codex-review/scripts/`
-2. Injects the absolute runner path into each SKILL.md template
-3. Validates templates and references before finalizing
-4. Atomic swap: backs up old install, swaps in new, rolls back on failure
+1. Installs 3 skills directly into `~/.claude/skills/` (one directory per skill)
+2. Copies the shared `codex-runner.js` to `~/.claude/skills/codex-review/scripts/`
+3. Injects the absolute runner path into each SKILL.md template
+4. Validates templates and references before finalizing
+5. Atomic swap per directory with rollback on failure
 
 ### Verify
 ```bash

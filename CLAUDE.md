@@ -66,19 +66,19 @@ skill-packs/codex-review/
 ### Installed Output (on user machine)
 
 ```text
-~/.claude/skills/codex-review/
-├── scripts/
-│   └── codex-runner.js
-└── skills/
-    ├── codex-plan-review/
-    │   ├── SKILL.md              ← RUNNER="/abs/path/codex-runner.js" hardcoded
-    │   └── references/
-    ├── codex-impl-review/
-    │   ├── SKILL.md
-    │   └── references/
-    └── codex-think-about/
-        ├── SKILL.md
-        └── references/
+~/.claude/skills/
+├── codex-review/
+│   └── scripts/
+│       └── codex-runner.js              ← shared runner
+├── codex-plan-review/
+│   ├── SKILL.md                         ← RUNNER="/abs/path/codex-runner.js" hardcoded
+│   └── references/
+├── codex-impl-review/
+│   ├── SKILL.md
+│   └── references/
+└── codex-think-about/
+    ├── SKILL.md
+    └── references/
 ```
 
 ### Core Execution Flow
