@@ -13,9 +13,22 @@ STATE_DIR=${STATE_OUTPUT#CODEX_STARTED:}
 ```
 
 ## 3) Poll
-- Use `node "$RUNNER" poll "$STATE_DIR"` every 15 seconds.
-- Continue while status is `running`.
-- Stop on `completed|failed|timeout|stalled`.
+
+Adaptive intervals — start slow, speed up:
+
+**Round 1 (first review):**
+- Poll 1: wait 60s
+- Poll 2: wait 60s
+- Poll 3: wait 30s
+- Poll 4+: wait 15s
+
+**Round 2+ (rebuttal rounds):**
+- Poll 1: wait 30s
+- Poll 2+: wait 15s
+
+After each poll, report to user what Codex is doing (extract status lines from poll output).
+Continue while status is `running`.
+Stop on `completed|failed|timeout|stalled`.
 
 ## 4) Apply/Rebut
 - Parse `ISSUE-{N}` blocks.

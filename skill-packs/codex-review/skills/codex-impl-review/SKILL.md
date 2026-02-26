@@ -23,7 +23,7 @@ RUNNER="{{RUNNER_PATH}}"
 1. Gather diff context (`git status`, `git diff`, optional plan file).
 2. Build prompt from `references/prompts.md` (`Implementation Review Prompt`).
 3. Start round 1 with `node "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT"`.
-4. Poll via `node "$RUNNER" poll <STATE_DIR>` every ~15 seconds.
+4. Poll with adaptive intervals (Round 1: 60s/60s/30s/15s..., Round 2+: 30s/15s...). Report Codex status to user after each poll.
 5. Parse issue list with `references/output-format.md`.
 6. Fix valid issues in code; rebut invalid findings with evidence.
 7. Resume debate via `--thread-id` until `APPROVE` or stalemate.

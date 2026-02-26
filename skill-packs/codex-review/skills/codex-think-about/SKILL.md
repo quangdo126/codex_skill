@@ -23,7 +23,7 @@ RUNNER="{{RUNNER_PATH}}"
 1. Gather factual context only (no premature opinion).
 2. Build round-1 prompt from `references/prompts.md`.
 3. Start Codex thread with `node "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT"`.
-4. Poll using `node "$RUNNER" poll <STATE_DIR>` until terminal status.
+4. Poll with adaptive intervals (Round 1: 60s/60s/30s/15s..., Round 2+: 30s/15s...). Report Codex status to user after each poll.
 5. Claude responds with agree/disagree points and new perspectives.
 6. Resume via `--thread-id` and loop until consensus or stalemate.
 7. Present user-facing synthesis with agreements, disagreements, and confidence.

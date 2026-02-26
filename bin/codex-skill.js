@@ -114,7 +114,8 @@ try {
 
   // 4. Atomic swap per directory: backup old → move staging → cleanup
   fs.mkdirSync(skillsRoot, { recursive: true });
-  const backups = [];
+  const backups = [];    // dirs that had a previous install → backed up
+  const swapped = [];    // dirs successfully moved from staging → target
   try {
     for (const dir of MANAGED_DIRS) {
       const target = path.join(skillsRoot, dir);
@@ -125,13 +126,24 @@ try {
         backups.push({ dir, target, backup });
       }
       fs.renameSync(staged, target);
+      swapped.push({ dir, target });
     }
   } catch (err) {
-    // Swap failed → restore all backups
-    for (const { target, backup } of backups) {
-      if (fs.existsSync(backup) && !fs.existsSync(target)) {
-        fs.renameSync(backup, target);
+    // Swap failed → full rollback: remove new targets, restore backups
+    const rollbackErrors = [];
+    for (const { dir, target } of swapped) {
+      try { fs.rmSync(target, { recursive: true, force: true }); } catch (e) {
+        rollbackErrors.push(`rm ${dir}: ${e.message}`);
       }
+    }
+    for (const { dir, target, backup } of backups) {
+      try { fs.renameSync(backup, target); } catch (e) {
+        rollbackErrors.push(`restore ${dir}: ${e.message}`);
+      }
+    }
+    if (rollbackErrors.length) {
+      console.error('Rollback errors (manual cleanup may be needed):');
+      for (const re of rollbackErrors) console.error(`  - ${re}`);
     }
     throw new Error(`Installation failed: ${err.message}`);
   }
