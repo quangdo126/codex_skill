@@ -29,24 +29,9 @@ export async function runInitCommand(options) {
     return;
   }
 
-  const skillNames = [
-    "codex-plan-review",
-    "codex-impl-review",
-    "codex-think-about"
-  ];
-
-  for (const skillName of skillNames) {
-    const runnerPath = path.join(targetDir, "skills", skillName, "scripts", "codex-runner.sh");
-    const resolveRunnerPath = path.join(
-      targetDir,
-      "skills",
-      skillName,
-      "scripts",
-      "resolve-runner.sh"
-    );
-    await ensureExecutableIfPresent(runnerPath);
-    await ensureExecutableIfPresent(resolveRunnerPath);
-  }
+  // Make the shared runner executable
+  const runnerPath = path.join(targetDir, "scripts", "codex-runner.js");
+  await ensureExecutableIfPresent(runnerPath);
 
   const manifestPath = path.join(targetDir, ".codex-skill-install.json");
   const manifest = {
@@ -64,8 +49,6 @@ export async function runInitCommand(options) {
     console.log("Installed codex-review skill pack.");
   }
 
-  console.log(
-    `Runners: ${skillNames.map((skillName) => `skills/${skillName}/scripts/codex-runner.sh`).join(", ")}`
-  );
+  console.log(`Runner: scripts/codex-runner.js`);
   console.log("Done. Run `codex-skill doctor` to verify environment health.");
 }

@@ -14,39 +14,32 @@ Use this skill to adversarially review a plan before implementation starts.
 - `codex-review` skill pack is installed (global or project scope).
 
 ## Runner Resolution
-Resolve runner from project-local scope first, then global scope:
+Resolve the shared Node.js runner from project-local scope first, then global scope:
 
 ```bash
-RESOLVER=""
-SEARCH_DIR="$PWD"
-while [ "$SEARCH_DIR" != "/" ]; do
-  CANDIDATE="$SEARCH_DIR/.claude/skills/codex-review/skills/codex-plan-review/scripts/resolve-runner.sh"
-  if [ -x "$CANDIDATE" ]; then
-    RESOLVER="$CANDIDATE"
-    break
-  fi
-  SEARCH_DIR=$(dirname "$SEARCH_DIR")
-done
-
-if [ -z "$RESOLVER" ] && [ -x "$HOME/.claude/skills/codex-review/skills/codex-plan-review/scripts/resolve-runner.sh" ]; then
-  RESOLVER="$HOME/.claude/skills/codex-review/skills/codex-plan-review/scripts/resolve-runner.sh"
+if [ -n "${CODEX_RUNNER:-}" ] && [ -f "$CODEX_RUNNER" ]; then
+  RUNNER="$CODEX_RUNNER"
+else
+  RUNNER=""
+  SEARCH_DIR="$PWD"
+  while [ "$SEARCH_DIR" != "/" ]; do
+    CANDIDATE="$SEARCH_DIR/.claude/skills/codex-review/scripts/codex-runner.js"
+    if [ -f "$CANDIDATE" ]; then RUNNER="$CANDIDATE"; break; fi
+    SEARCH_DIR=$(dirname "$SEARCH_DIR")
+  done
+  [ -z "$RUNNER" ] && [ -f "$HOME/.claude/skills/codex-review/scripts/codex-runner.js" ] && \
+    RUNNER="$HOME/.claude/skills/codex-review/scripts/codex-runner.js"
 fi
-
-if [ -z "$RESOLVER" ]; then
-  echo "Install with codex-skill init -g or codex-skill init" >&2
-  exit 1
-fi
-
-RUNNER=$(bash "$RESOLVER")
+[ -z "$RUNNER" ] && { echo "Install: npx codex-skill init -g" >&2; exit 1; }
 ```
 
-If resolver fails, run `codex-skill init -g` (global) or `codex-skill init` (project).
+If runner is not found, run `npx codex-skill init -g` (global) or `npx codex-skill init` (project).
 
 ## Workflow
 1. Gather config (plan path, effort, user request, current context).
 2. Build prompt from `references/prompts.md` (`Plan Review Prompt`).
-3. Start round 1 with `"$RUNNER" start --working-dir "$PWD" --effort "$EFFORT"`.
-4. Poll with `"$RUNNER" poll <STATE_DIR>` every ~15 seconds until terminal status.
+3. Start round 1 with `node "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT"`.
+4. Poll with `node "$RUNNER" poll <STATE_DIR>` every ~15 seconds until terminal status.
 5. Parse Codex issues (`ISSUE-{N}` + `VERDICT`) using `references/output-format.md`.
 6. Apply valid fixes to the plan, rebut invalid points, and resume with `--thread-id`.
 7. Repeat until `APPROVE` or deterministic stalemate.

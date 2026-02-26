@@ -1,6 +1,6 @@
 {
   "name": "codex-skill",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Install and manage codex-review skills for Claude Code",
   "license": "MIT",
   "type": "module",

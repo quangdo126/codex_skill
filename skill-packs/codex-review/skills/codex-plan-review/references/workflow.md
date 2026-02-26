@@ -8,14 +8,14 @@
 
 ## 2) Start Round 1
 ```bash
-STATE_OUTPUT=$(printf '%s' "$PROMPT" | "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT")
+STATE_OUTPUT=$(printf '%s' "$PROMPT" | node "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT")
 STATE_DIR=${STATE_OUTPUT#CODEX_STARTED:}
 ```
 
 ## 3) Poll Loop
 ```bash
 while true; do
-  POLL_OUTPUT=$("$RUNNER" poll "$STATE_DIR")
+  POLL_OUTPUT=$(node "$RUNNER" poll "$STATE_DIR")
   STATUS=$(printf '%s\n' "$POLL_OUTPUT" | head -1 | cut -d: -f2)
   if [ "$STATUS" = "running" ]; then
     sleep 15
@@ -35,7 +35,7 @@ Terminal statuses: `completed`, `failed`, `timeout`, `stalled`.
 
 ## 5) Resume (Round 2+)
 ```bash
-STATE_OUTPUT=$(printf '%s' "$REBUTTAL_PROMPT" | "$RUNNER" start \
+STATE_OUTPUT=$(printf '%s' "$REBUTTAL_PROMPT" | node "$RUNNER" start \
   --working-dir "$PWD" --thread-id "$THREAD_ID" --effort "$EFFORT")
 ```
 

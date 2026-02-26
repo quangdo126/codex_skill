@@ -6,6 +6,10 @@
 
 # Node
 node_modules/
+*.tgz
+
+# Install manifest
+.codex-skill-install.json
 
 # macOS
 .DS_Store

@@ -14,37 +14,30 @@ Use this skill to run adversarial review on uncommitted changes before commit.
 - `codex-review` skill pack is installed (global or project scope).
 
 ## Runner Resolution
-Resolve runner from project-local scope first, then global scope:
+Resolve the shared Node.js runner from project-local scope first, then global scope:
 
 ```bash
-RESOLVER=""
-SEARCH_DIR="$PWD"
-while [ "$SEARCH_DIR" != "/" ]; do
-  CANDIDATE="$SEARCH_DIR/.claude/skills/codex-review/skills/codex-impl-review/scripts/resolve-runner.sh"
-  if [ -x "$CANDIDATE" ]; then
-    RESOLVER="$CANDIDATE"
-    break
-  fi
-  SEARCH_DIR=$(dirname "$SEARCH_DIR")
-done
-
-if [ -z "$RESOLVER" ] && [ -x "$HOME/.claude/skills/codex-review/skills/codex-impl-review/scripts/resolve-runner.sh" ]; then
-  RESOLVER="$HOME/.claude/skills/codex-review/skills/codex-impl-review/scripts/resolve-runner.sh"
+if [ -n "${CODEX_RUNNER:-}" ] && [ -f "$CODEX_RUNNER" ]; then
+  RUNNER="$CODEX_RUNNER"
+else
+  RUNNER=""
+  SEARCH_DIR="$PWD"
+  while [ "$SEARCH_DIR" != "/" ]; do
+    CANDIDATE="$SEARCH_DIR/.claude/skills/codex-review/scripts/codex-runner.js"
+    if [ -f "$CANDIDATE" ]; then RUNNER="$CANDIDATE"; break; fi
+    SEARCH_DIR=$(dirname "$SEARCH_DIR")
+  done
+  [ -z "$RUNNER" ] && [ -f "$HOME/.claude/skills/codex-review/scripts/codex-runner.js" ] && \
+    RUNNER="$HOME/.claude/skills/codex-review/scripts/codex-runner.js"
 fi
-
-if [ -z "$RESOLVER" ]; then
-  echo "Install with codex-skill init -g or codex-skill init" >&2
-  exit 1
-fi
-
-RUNNER=$(bash "$RESOLVER")
+[ -z "$RUNNER" ] && { echo "Install: npx codex-skill init -g" >&2; exit 1; }
 ```
 
 ## Workflow
 1. Gather diff context (`git status`, `git diff`, optional plan file).
 2. Build prompt from `references/prompts.md` (`Implementation Review Prompt`).
-3. Start round 1 with `"$RUNNER" start --working-dir "$PWD" --effort "$EFFORT"`.
-4. Poll via `"$RUNNER" poll <STATE_DIR>` every ~15 seconds.
+3. Start round 1 with `node "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT"`.
+4. Poll via `node "$RUNNER" poll <STATE_DIR>` every ~15 seconds.
 5. Parse issue list with `references/output-format.md`.
 6. Fix valid issues in code; rebut invalid findings with evidence.
 7. Resume debate via `--thread-id` until `APPROVE` or stalemate.

@@ -12,6 +12,11 @@ function checkCodexCli() {
   return probe.status === 0;
 }
 
+function checkNodeAvailable() {
+  const probe = spawnSync("node", ["--version"], { encoding: "utf8" });
+  return probe.status === 0;
+}
+
 function readManifest(targetDir) {
   const manifestPath = path.join(targetDir, "manifest.json");
   if (!fs.existsSync(manifestPath)) {
@@ -30,35 +35,55 @@ function checkInstall(targetDir) {
   const manifest = readManifest(targetDir);
   const expectedSkills = Array.isArray(manifest?.skills) ? manifest.skills : [];
   const missingSkills = [];
-  const missingRunners = [];
 
   for (const skillName of expectedSkills) {
     const skillPath = path.join(targetDir, "skills", skillName, "SKILL.md");
     if (!fs.existsSync(skillPath)) {
       missingSkills.push(skillName);
     }
+  }
 
-    const runnerPath = path.join(targetDir, "skills", skillName, "scripts", "codex-runner.sh");
-    const resolverPath = path.join(targetDir, "skills", skillName, "scripts", "resolve-runner.sh");
-    if (!fs.existsSync(runnerPath) || !fs.existsSync(resolverPath)) {
-      missingRunners.push(skillName);
+  // Check shared runner from manifest — validate resolved real path stays inside targetDir
+  const runnerRelPath = manifest?.runner || "scripts/codex-runner.js";
+  const runnerPath = path.resolve(targetDir, runnerRelPath);
+  let hasRunner = false;
+  if (fs.existsSync(runnerPath)) {
+    try {
+      const realRunnerPath = fs.realpathSync(runnerPath);
+      const realTargetDir = fs.realpathSync(targetDir);
+      hasRunner = realRunnerPath.startsWith(realTargetDir + path.sep);
+    } catch {
+      hasRunner = false;
+    }
+  }
+
+  // Verify runner version
+  let runnerVersion = null;
+  if (hasRunner) {
+    const probe = spawnSync("node", [runnerPath, "version"], {
+      encoding: "utf8",
+      timeout: 10000,
+    });
+    if (probe.status === 0) {
+      runnerVersion = (probe.stdout || "").trim();
     }
   }
 
   const installed = fs.existsSync(targetDir);
-  const hasRunner = missingRunners.length === 0 && expectedSkills.length > 0;
   const hasManifest = manifest !== null;
-  const isHealthy = installed && hasRunner && hasManifest && missingSkills.length === 0;
+  const runnerOk = hasRunner && runnerVersion !== null;
+  const isHealthy = installed && runnerOk && hasManifest && missingSkills.length === 0;
 
   return {
     installed,
     hasRunner,
+    runnerVersion,
+    runnerRelPath,
     hasManifest,
     missingSkills,
-    missingRunners,
     expectedSkills,
     targetDir,
-    isHealthy
+    isHealthy,
   };
 }
 
@@ -69,10 +94,10 @@ function statusMark(value) {
 function printScope(name, status) {
   console.log(`${name} install: ${statusMark(status.installed)} (${status.targetDir})`);
   console.log(`  manifest: ${statusMark(status.hasManifest)}`);
-  if (status.expectedSkills.length === 0) {
-    console.log("  runner scripts: MISSING");
+  if (status.hasRunner) {
+    console.log(`  runner: OK (${status.runnerRelPath}, v${status.runnerVersion || "?"})`);
   } else {
-    console.log(`  runner scripts: ${status.missingRunners.length === 0 ? "OK" : status.missingRunners.join(", ")}`);
+    console.log(`  runner: MISSING (${status.runnerRelPath})`);
   }
   if (status.expectedSkills.length > 0) {
     const missing = status.missingSkills.length === 0 ? "none" : status.missingSkills.join(", ");
@@ -81,6 +106,9 @@ function printScope(name, status) {
 }
 
 export async function runDoctorCommand(options) {
+  const hasNode = checkNodeAvailable();
+  console.log(`node: ${statusMark(hasNode)}`);
+
   const hasCodex = checkCodexCli();
   console.log(`codex CLI: ${statusMark(hasCodex)}`);
 
@@ -88,11 +116,17 @@ export async function runDoctorCommand(options) {
     ? [{ name: "global", status: checkInstall(resolveInstallPath({ global: true, cwd: options.cwd })) }]
     : [
         { name: "global", status: checkInstall(resolveInstallPath({ global: true, cwd: options.cwd })) },
-        { name: "local", status: checkInstall(resolveInstallPath({ global: false, cwd: options.cwd })) }
+        { name: "local", status: checkInstall(resolveInstallPath({ global: false, cwd: options.cwd })) },
       ];
 
   for (const scope of scopes) {
     printScope(scope.name, scope.status);
+  }
+
+  if (!hasNode) {
+    console.log("Doctor result: FAIL");
+    console.log("Hint: install Node.js >= 20.");
+    return false;
   }
 
   if (!hasCodex) {

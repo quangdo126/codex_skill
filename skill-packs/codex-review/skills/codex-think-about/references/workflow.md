@@ -8,7 +8,7 @@
 
 ## 2) Start Round 1
 ```bash
-STATE_OUTPUT=$(printf '%s' "$PROMPT" | "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT")
+STATE_OUTPUT=$(printf '%s' "$PROMPT" | node "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT")
 STATE_DIR=${STATE_OUTPUT#CODEX_STARTED:}
 ```
 
@@ -26,7 +26,7 @@ After Codex output:
 
 ## 5) Resume Round 2+
 ```bash
-STATE_OUTPUT=$(printf '%s' "$RESPONSE_PROMPT" | "$RUNNER" start \
+STATE_OUTPUT=$(printf '%s' "$RESPONSE_PROMPT" | node "$RUNNER" start \
   --working-dir "$PWD" --thread-id "$THREAD_ID" --effort "$EFFORT")
 ```
 

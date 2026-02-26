@@ -76,19 +76,18 @@ Options:
 ├── skill-packs/
 │   └── codex-review/
 │       ├── manifest.json
+│       ├── scripts/
+│       │   └── codex-runner.js      ← shared Node.js runner
 │       └── skills/
 │           ├── codex-plan-review/
 │           │   ├── SKILL.md
-│           │   ├── references/
-│           │   └── scripts/
+│           │   └── references/
 │           ├── codex-impl-review/
 │           │   ├── SKILL.md
-│           │   ├── references/
-│           │   └── scripts/
+│           │   └── references/
 │           └── codex-think-about/
 │               ├── SKILL.md
-│               ├── references/
-│               └── scripts/
+│               └── references/
 ├── CLAUDE.md
 └── package.json
 ```

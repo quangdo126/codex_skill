@@ -8,12 +8,12 @@
 
 ## 2) Start Round 1
 ```bash
-STATE_OUTPUT=$(printf '%s' "$PROMPT" | "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT")
+STATE_OUTPUT=$(printf '%s' "$PROMPT" | node "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT")
 STATE_DIR=${STATE_OUTPUT#CODEX_STARTED:}
 ```
 
 ## 3) Poll
-- Use `"$RUNNER" poll "$STATE_DIR"` every 15 seconds.
+- Use `node "$RUNNER" poll "$STATE_DIR"` every 15 seconds.
 - Continue while status is `running`.
 - Stop on `completed|failed|timeout|stalled`.
 
@@ -24,7 +24,7 @@ STATE_DIR=${STATE_OUTPUT#CODEX_STARTED:}
 
 ## 5) Resume Thread
 ```bash
-STATE_OUTPUT=$(printf '%s' "$REBUTTAL_PROMPT" | "$RUNNER" start \
+STATE_OUTPUT=$(printf '%s' "$REBUTTAL_PROMPT" | node "$RUNNER" start \
   --working-dir "$PWD" --thread-id "$THREAD_ID" --effort "$EFFORT")
 ```
 
