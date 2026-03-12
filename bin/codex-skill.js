@@ -352,15 +352,12 @@ try {
   console.log('  /codex-parallel-review — parallel dual-reviewer analysis + debate');
   console.log('  /codex-codebase-review — chunked full-codebase review (50-500+ files)');
   console.log('  /codex-security-review — security-focused review (OWASP Top 10 + CWE)');
-<<<<<<< HEAD
-=======
   console.log('  /codex-auto-review     — smart auto-detection + parallel review');
-  
+
   if (!AUTO_MODE) {
     console.log('');
     console.log('Tip: Run with --auto flag to enable automatic review triggers in CLAUDE.md');
   }
->>>>>>> df10663 (fix: improve --auto flag with proper error handling and project root detection)
 } catch (err) {
   // Cleanup staging on any error
   if (fs.existsSync(stagingDir)) {

@@ -211,67 +211,7 @@ skill-packs/codex-review/
 2. `node skill-packs/codex-review/scripts/codex-runner.js version` — in version `11`
 3. `ls ~/.claude/skills/codex-review/` — chứa `scripts/`
 4. SKILL.md chứa absolute path, không search loop
-<<<<<<< HEAD
-5. Invoke `/codex-plan-review`, `/codex-impl-review`, `/codex-think-about`, `/codex-commit-review`, `/codex-pr-review`, `/codex-parallel-review`, `/codex-codebase-review` trong Claude Code
-=======
 5. Invoke `/codex-plan-review`, `/codex-impl-review`, `/codex-think-about`, `/codex-commit-review`, `/codex-pr-review`, `/codex-parallel-review`, `/codex-codebase-review`, `/codex-security-review`, `/codex-auto-review` trong Claude Code
-
-## Codex Auto-Review Integration
-
-**IMPORTANT**: This project has codex-review skills installed with auto-review mode enabled.
-
-### When to Automatically Invoke Review Skills
-
-The following rules guide when to automatically trigger code review skills WITHOUT explicit user request:
-
-#### 1. Before Creating Commits (`/codex-impl-review`)
-**Trigger**: When user asks to commit changes OR you detect uncommitted changes before a commit operation.
-**Action**: Automatically run `/codex-impl-review` to review working tree changes.
-**Example phrases**: "commit these changes", "create a commit", "git commit"
-
-#### 2. Before Creating Pull Requests (`/codex-pr-review`)
-**Trigger**: When user asks to create a PR OR you're about to run `gh pr create`.
-**Action**: Automatically run `/codex-pr-review` to review branch diff, commit history, and PR description.
-**Example phrases**: "create a PR", "open a pull request", "submit for review"
-
-#### 3. When Plan Files Are Detected (`/codex-plan-review`)
-**Trigger**: When you create or significantly modify files matching: `plan.md`, `PLAN.md`, `*.plan.md`, or `docs/*plan*`.
-**Action**: Automatically run `/codex-plan-review` to validate the implementation plan.
-**Example phrases**: "write an implementation plan", "create a plan document"
-
-#### 4. When Security-Sensitive Code Is Detected (`/codex-security-review`)
-**Trigger**: When changes involve:
-- Authentication/authorization logic
-- SQL queries or database operations
-- Cryptography or password handling
-- User input processing
-- File uploads or external API calls
-**Action**: Automatically run `/codex-security-review` for security-focused analysis.
-
-#### 5. Comprehensive Auto-Review (`/codex-auto-review`)
-**Trigger**: When user explicitly requests comprehensive review OR before major milestones (feature completion, release prep).
-**Action**: Run `/codex-auto-review` which auto-detects relevant skills and runs them in parallel.
-**Example phrases**: "review everything", "comprehensive code review", "full review before merge"
-
-### Execution Guidelines
-
-- **Always announce**: Before auto-triggering a review, briefly state: "Running `/codex-<skill>` (auto-review mode)..."
-- **Show results**: Present review findings to the user and ask for confirmation before applying fixes.
-- **User override**: If user says "skip review" or "no review needed", respect their decision.
-- **Failure handling**: If a review skill fails or times out, report the error and ask user whether to proceed without review.
-
-### Manual Invocation Still Available
-
-Users can still manually invoke any skill:
-- `/codex-plan-review` — debate plans before implementation
-- `/codex-impl-review` — review uncommitted or branch changes
-- `/codex-commit-review` — review commit messages
-- `/codex-pr-review` — review PRs (branch diff + description)
-- `/codex-security-review` — security-focused review (OWASP Top 10 + CWE)
-- `/codex-parallel-review` — parallel dual-reviewer analysis + debate
-- `/codex-codebase-review` — chunked full-codebase review (50-500+ files)
-- `/codex-auto-review` — smart auto-detection + parallel review
-- `/codex-think-about` — peer reasoning/debate on technical topics
 
 <!-- BEGIN CODEX-AUTO-REVIEW -->
 ## Codex Auto-Review Integration
@@ -331,5 +271,3 @@ Users can still manually invoke any skill:
 - `/codex-auto-review` — smart auto-detection + parallel review
 - `/codex-think-about` — peer reasoning/debate on technical topics
 <!-- END CODEX-AUTO-REVIEW -->
-
->>>>>>> df10663 (fix: improve --auto flag with proper error handling and project root detection)
