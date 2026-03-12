@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 
 // --- Constants ---
-const CODEX_RUNNER_VERSION = 9;
+const CODEX_RUNNER_VERSION = 10;
 
 const EXIT_SUCCESS = 0;
 const EXIT_ERROR = 1;
@@ -831,68 +831,55 @@ function convertToMarkdown(canonicalJSON) {
  * @param {string} format - Output format: markdown|json|sarif|both
  */
 function writeReviewOutputs(stateDir, markdownOutput, metadata, format) {
-  // ALWAYS write review.txt for backward compatibility (all formats)
-  fs.writeFileSync(path.join(stateDir, "review.txt"), markdownOutput, "utf8");
-  
+  // Always write review.md (primary markdown output)
+  atomicWrite(path.join(stateDir, "review.md"), markdownOutput);
+
   // If markdown only, we're done
   if (format === "markdown" || !format) {
     return;
   }
-  
+
   // Convert to JSON/SARIF formats
   if (format === "json" || format === "sarif" || format === "both") {
     try {
       const canonicalJSON = parseToCanonicalJSON(markdownOutput, metadata);
-      
+
       // Write canonical JSON
       if (format === "json" || format === "both") {
-        fs.writeFileSync(
+        atomicWrite(
           path.join(stateDir, "review.json"),
-          JSON.stringify(canonicalJSON, null, 2),
-          "utf8"
+          JSON.stringify(canonicalJSON, null, 2)
         );
       }
-      
+
       // Write SARIF
       if (format === "sarif" || format === "both") {
         const sarif = convertToSARIF(canonicalJSON);
-        fs.writeFileSync(
+        atomicWrite(
           path.join(stateDir, "review.sarif.json"),
-          JSON.stringify(sarif, null, 2),
-          "utf8"
-        );
-      }
-      
-      // Write rendered Markdown (from JSON, not original)
-      if (format === "both") {
-        const renderedMarkdown = convertToMarkdown(canonicalJSON);
-        fs.writeFileSync(
-          path.join(stateDir, "review.md"),
-          renderedMarkdown,
-          "utf8"
+          JSON.stringify(sarif, null, 2)
         );
       }
     } catch (err) {
-      // Fallback already written (review.txt)
+      // Fallback already written (review.md)
       process.stderr.write(`Warning: Format conversion failed: ${err.message}\n`);
       if (err && err.stack) process.stderr.write(`Stack trace: ${err.stack}\n`);
-      
+
       // Write error placeholder
       const errorPlaceholder = {
         error: "Format conversion failed",
         message: err.message,
         requested_format: format,
-        fallback: "review.txt contains original markdown output"
+        fallback: "review.md contains original markdown output"
       };
-      
+
       if (format === "json" || format === "both") {
-        fs.writeFileSync(
+        atomicWrite(
           path.join(stateDir, "review.json"),
-          JSON.stringify(errorPlaceholder, null, 2),
-          "utf8"
+          JSON.stringify(errorPlaceholder, null, 2)
         );
       }
-      
+
       if (format === "sarif" || format === "both") {
         const sarifError = buildSarifErrorDocument(err.message, {
           tool: {
@@ -900,10 +887,9 @@ function writeReviewOutputs(stateDir, markdownOutput, metadata, format) {
             version: String(CODEX_RUNNER_VERSION),
           },
         });
-        fs.writeFileSync(
+        atomicWrite(
           path.join(stateDir, "review.sarif.json"),
-          JSON.stringify(sarifError, null, 2),
-          "utf8"
+          JSON.stringify(sarifError, null, 2)
         );
       }
     }
@@ -1174,7 +1160,7 @@ function parseJsonl(stateDir, lastLineCount, elapsed, processAlive, timeoutVal, 
   let allLines = [];
   if (fs.existsSync(jsonlFile)) {
     const content = fs.readFileSync(jsonlFile, "utf8");
-    allLines = content.split("\n");
+    allLines = content.split("\n").filter(l => l.trim());
   }
 
   let turnCompleted = false;
@@ -1272,9 +1258,9 @@ function parseJsonl(stateDir, lastLineCount, elapsed, processAlive, timeoutVal, 
       try {
         writeReviewOutputs(stateDir, reviewText, metadata, format);
       } catch (err) {
-        // Fallback: always write review.txt for backward compatibility
-        const reviewPath = path.join(stateDir, "review.txt");
-        fs.writeFileSync(reviewPath, reviewText, "utf8");
+        // Fallback: always write review.md as primary output
+        const reviewPath = path.join(stateDir, "review.md");
+        atomicWrite(reviewPath, reviewText);
         process.stderr.write(`Warning: Format conversion failed: ${err.message}\n`);
       }
       
@@ -1518,9 +1504,9 @@ function cmdPoll(argv) {
     const cached = fs.readFileSync(finalFile, "utf8");
     process.stdout.write(cached);
     if (!cached.endsWith("\n")) process.stdout.write("\n");
-    const reviewFile = path.join(stateDir, "review.txt");
+    const reviewFile = path.join(stateDir, "review.md");
     if (fs.existsSync(reviewFile)) {
-      process.stderr.write(`[cached] Review available in ${stateDir}/review.txt\n`);
+      process.stderr.write(`[cached] Review available in ${stateDir}/review.md\n`);
     }
     return EXIT_SUCCESS;
   }

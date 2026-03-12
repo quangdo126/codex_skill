@@ -40,12 +40,12 @@ RUNNER="{{RUNNER_PATH}}"
 ### Output Format Guide
 | Format     | Output Files                          | Best for                        |
 |------------|---------------------------------------|---------------------------------|
-| `markdown` | `review.txt` (human-readable)         | Default, interactive review     |
-| `json`     | `review.txt` + `review.json`          | CI/CD integration, automation   |
-| `sarif`    | `review.txt` + `review.sarif.json`    | IDE integration (VS Code, etc.) |
-| `both`     | All above + `review.md` (rendered)    | Complete documentation          |
+| `markdown` | `review.md` (human-readable)          | Default, interactive review     |
+| `json`     | `review.md` + `review.json`           | CI/CD integration, automation   |
+| `sarif`    | `review.md` + `review.sarif.json`     | IDE integration (VS Code, etc.) |
+| `both`     | `review.md` + `review.json` + `review.sarif.json` | Complete documentation          |
 
-**Note**: `review.txt` is always written for backward compatibility. Each chunk produces separate output files in its STATE_DIR.
+**Note**: `review.md` is always written as the primary markdown output. Each chunk produces separate output files in its STATE_DIR.
 
 ## Required References
 - Detailed orchestration: `references/workflow.md`

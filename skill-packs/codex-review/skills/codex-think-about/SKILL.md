@@ -39,12 +39,12 @@ RUNNER="{{RUNNER_PATH}}"
 ### Output Format Guide
 | Format     | Output Files                          | Best for                        |
 |------------|---------------------------------------|---------------------------------|
-| `markdown` | `review.txt` (human-readable)         | Default, interactive debate     |
-| `json`     | `review.txt` + `review.json`          | Structured reasoning output     |
-| `sarif`    | `review.txt` + `review.sarif.json`    | Not recommended for think-about |
-| `both`     | All above + `review.md` (rendered)    | Complete documentation          |
+| `markdown` | `review.md` (human-readable)          | Default, interactive debate     |
+| `json`     | `review.md` + `review.json`           | Structured reasoning output     |
+| `sarif`    | `review.md` + `review.sarif.json`     | Not recommended for think-about |
+| `both`     | `review.md` + `review.json` + `review.sarif.json` | Complete documentation          |
 
-**Note**: `review.txt` is always written for backward compatibility. SARIF format is less useful for think-about (no code locations), prefer JSON for structured output.
+**Note**: `review.md` is always written as the primary markdown output. SARIF format is less useful for think-about (no code locations), prefer JSON for structured output.
 
 ## Required References
 - Execution loop: `references/workflow.md`

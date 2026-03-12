@@ -46,7 +46,7 @@ Continue while status is `running`.
 Stop on `completed|failed|timeout|stalled`.
 
 ## 4) Parse Review
-- Read `THREAD_ID:` and `review.txt` from runner output/state directory.
+- Read `THREAD_ID:` and `review.md` from runner output/state directory.
 - Extract `ISSUE-{N}` blocks.
 - Apply accepted fixes to plan.
 - Build rebuttal packet for disputed items.
@@ -91,9 +91,9 @@ Remove the state directory and kill any remaining Codex/watchdog processes. Alwa
 Runner `poll` trả status qua output string `POLL:<status>:<elapsed>[:exit_code:details]`. Thông thường exit 0, nhưng có thể exit non-zero khi state dir invalid hoặc I/O error — cần xử lý cả hai trường hợp:
 
 **Parse POLL string (exit 0):**
-- `POLL:completed:...` → thành công, đọc review.txt
+- `POLL:completed:...` → thành công, đọc review.md
 - `POLL:failed:...:3:...` → turn failed. Retry 1 lần. Nếu vẫn fail, report error.
-- `POLL:timeout:...:2:...` → timeout. Report partial results nếu review.txt tồn tại. Suggest retry với lower effort.
+- `POLL:timeout:...:2:...` → timeout. Report partial results nếu review.md tồn tại. Suggest retry với lower effort.
 - `POLL:stalled:...:4:...` → stalled. Report partial results. Suggest lower effort.
 
 **Fallback khi poll exit non-zero hoặc output không parse được:**

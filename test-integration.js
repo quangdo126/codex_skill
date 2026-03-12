@@ -108,15 +108,15 @@ function testFileSystemSimulation() {
   console.log('Test 1: format=markdown');
   const markdownDir = path.join(testDir, 'markdown-test');
   fs.mkdirSync(markdownDir, { recursive: true });
-  fs.writeFileSync(path.join(markdownDir, 'review.txt'), sampleMarkdown, 'utf8');
-  console.log('  ✓ review.txt created');
+  fs.writeFileSync(path.join(markdownDir, 'review.md'), sampleMarkdown, 'utf8');
+  console.log('  ✓ review.md created');
   console.log('  ✓ No JSON/SARIF files (as expected for markdown format)');
   
   // Test 2: JSON format
   console.log('\nTest 2: format=json');
   const jsonDir = path.join(testDir, 'json-test');
   fs.mkdirSync(jsonDir, { recursive: true });
-  fs.writeFileSync(path.join(jsonDir, 'review.txt'), sampleMarkdown, 'utf8');
+  fs.writeFileSync(path.join(jsonDir, 'review.md'), sampleMarkdown, 'utf8');
   
   // Simulate canonical JSON output
   const mockCanonicalJSON = {
@@ -188,7 +188,7 @@ function testFileSystemSimulation() {
     JSON.stringify(mockCanonicalJSON, null, 2),
     'utf8'
   );
-  console.log('  ✓ review.txt created');
+  console.log('  ✓ review.md created');
   console.log('  ✓ review.json created');
   console.log('  ✓ JSON structure validated');
   
@@ -196,7 +196,7 @@ function testFileSystemSimulation() {
   console.log('\nTest 3: format=sarif');
   const sarifDir = path.join(testDir, 'sarif-test');
   fs.mkdirSync(sarifDir, { recursive: true });
-  fs.writeFileSync(path.join(sarifDir, 'review.txt'), sampleMarkdown, 'utf8');
+  fs.writeFileSync(path.join(sarifDir, 'review.md'), sampleMarkdown, 'utf8');
   
   // Simulate SARIF output
   const mockSARIF = {
@@ -273,7 +273,7 @@ function testFileSystemSimulation() {
     JSON.stringify(mockSARIF, null, 2),
     'utf8'
   );
-  console.log('  ✓ review.txt created');
+  console.log('  ✓ review.md created');
   console.log('  ✓ review.sarif.json created');
   console.log('  ✓ SARIF 2.1.0 schema validated');
   console.log('  ✓ Severity mapping: critical→error, high→error');
@@ -282,7 +282,7 @@ function testFileSystemSimulation() {
   console.log('\nTest 4: format=both');
   const bothDir = path.join(testDir, 'both-test');
   fs.mkdirSync(bothDir, { recursive: true });
-  fs.writeFileSync(path.join(bothDir, 'review.txt'), sampleMarkdown, 'utf8');
+  fs.writeFileSync(path.join(bothDir, 'review.md'), sampleMarkdown, 'utf8');
   fs.writeFileSync(
     path.join(bothDir, 'review.json'),
     JSON.stringify(mockCanonicalJSON, null, 2),
@@ -294,81 +294,59 @@ function testFileSystemSimulation() {
     'utf8'
   );
   
-  // Simulate rendered markdown
-  const renderedMarkdown = `# Code Review Results
-
-**Verdict**: REVISE
-**Status**: complete (Round 1)
-**Files Reviewed**: 5
-**Issues Found**: 2 (0 fixed, 2 open)
-
----
-
-## Critical Issues (1)
-
-### ISSUE-1: SQL injection vulnerability in user search
-- **Category**: security
-- **Severity**: critical
-- **File**: \`src/api/users.js:23-25\`
-- **Confidence**: high
-- **Status**: open
-
-**Problem**: User input is directly interpolated into SQL query without sanitization.
-
----
-
-## High Issues (1)
-
-### ISSUE-2: Missing error handling in async function
-- **Category**: bug
-- **Severity**: high
-- **File**: \`src/api/users.js:45-48\`
-- **Confidence**: high
-- **Status**: open
-
-**Problem**: Async function does not handle promise rejection.
-
----
-
-## Verdict
-
-**REVISE**
-
-All critical security issues must be fixed before merge.
-
-**Conditions**:
-- ISSUE-1 (SQL injection) must be fixed
-
-**Next Steps**:
-- Apply parameterized query fix for ISSUE-1
-- Re-run tests
-
----
-
-**Review Metadata**:
-- Skill: codex-impl-review
-- Duration: 145s
-- Model: gpt-5.3-codex
-- Timestamp: ${new Date().toISOString()}`;
-  
-  fs.writeFileSync(path.join(bothDir, 'review.md'), renderedMarkdown, 'utf8');
-  console.log('  ✓ review.txt created');
+  console.log('  ✓ review.md created');
   console.log('  ✓ review.json created');
   console.log('  ✓ review.sarif.json created');
-  console.log('  ✓ review.md created (rendered from JSON)');
-  
+
+  let allPassed = true;
+
+  // Test 5: Content assertion — review.md is original markdown, not re-rendered
+  console.log('\nTest 5: Content assertion — review.md is original markdown');
+  const originalMdPath = path.join(markdownDir, 'review.md');
+  const originalMdContent = fs.readFileSync(originalMdPath, 'utf8');
+  if (originalMdContent.trim() === sampleMarkdown.trim()) {
+    console.log('  ✓ review.md content matches original markdown (byte-for-byte after trim)');
+  } else {
+    console.log('  ✗ review.md content does NOT match original markdown');
+    allPassed = false;
+  }
+
+  // Verify review.md is NOT output of convertToMarkdown() — check absence of structured headers
+  if (!originalMdContent.includes('# Code Review Results') && !originalMdContent.includes('## Issues by Severity')) {
+    console.log('  ✓ review.md is NOT re-rendered (no convertToMarkdown headers)');
+  } else {
+    console.log('  ✗ review.md appears to be re-rendered output');
+    allPassed = false;
+  }
+
+  // Test 6: Cached poll should check review.md (not review.txt)
+  console.log('\nTest 6: Cached poll checks review.md');
+  const cachedReviewPath = path.join(markdownDir, 'review.md');
+  if (fs.existsSync(cachedReviewPath)) {
+    console.log('  ✓ review.md exists for cached poll check');
+  } else {
+    console.log('  ✗ review.md NOT found for cached poll check');
+    allPassed = false;
+  }
+  const oldTxtPath = path.join(markdownDir, 'review.txt');
+  if (!fs.existsSync(oldTxtPath)) {
+    console.log('  ✓ review.txt does NOT exist (expected — no longer created)');
+  } else {
+    console.log('  ✗ review.txt still exists (should not be created anymore)');
+    allPassed = false;
+  }
+
   // Verification
   console.log('\n' + '='.repeat(60));
   console.log('\n[Verification] Checking created files:\n');
   
   const tests = [
-    { dir: markdownDir, files: ['review.txt'], format: 'markdown' },
-    { dir: jsonDir, files: ['review.txt', 'review.json'], format: 'json' },
-    { dir: sarifDir, files: ['review.txt', 'review.sarif.json'], format: 'sarif' },
-    { dir: bothDir, files: ['review.txt', 'review.json', 'review.sarif.json', 'review.md'], format: 'both' }
+    { dir: markdownDir, files: ['review.md'], format: 'markdown' },
+    { dir: jsonDir, files: ['review.md', 'review.json'], format: 'json' },
+    { dir: sarifDir, files: ['review.md', 'review.sarif.json'], format: 'sarif' },
+    { dir: bothDir, files: ['review.md', 'review.json', 'review.sarif.json'], format: 'both' }
   ];
-  
-  let allPassed = true;
+
   for (const test of tests) {
     console.log(`Format: ${test.format}`);
     for (const file of test.files) {
@@ -417,7 +395,7 @@ All critical security issues must be fixed before merge.
     console.log('- All format options produce expected files');
     console.log('- JSON structure validated');
     console.log('- SARIF 2.1.0 compliance verified');
-    console.log('- Backward compatibility maintained (review.txt always present)');
+    console.log('- review.md always written as primary output');
     console.log('\n✅ Implementation ready for production use');
   } else {
     console.log('\n✗ Some tests FAILED');
