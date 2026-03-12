@@ -76,7 +76,7 @@ function resolveCodexCommand() {
   return { cmd: "codex", prependArgs: [] };
 }
 
-function launchCodex(stateDir, workingDir, timeoutS, threadId, effort) {
+function launchCodex(stateDir, workingDir, timeoutS, threadId, effort, sandbox = "read-only") {
   const promptFile = path.join(stateDir, "prompt.txt");
   const jsonlFile = path.join(stateDir, "output.jsonl");
   const errFile = path.join(stateDir, "error.log");
@@ -93,7 +93,7 @@ function launchCodex(stateDir, workingDir, timeoutS, threadId, effort) {
     args = [
       ...prependArgs,
       "exec", "--skip-git-repo-check", "--json",
-      "--sandbox", "read-only",
+      "--sandbox", sandbox,
       "--config", `model_reasoning_effort=${effort}`,
       "-C", workingDir,
     ];
@@ -491,6 +491,7 @@ function cmdStart(argv) {
       effort: { type: "string", default: "high" },
       "thread-id": { type: "string", default: "" },
       timeout: { type: "string", default: "3600" },
+      sandbox: { type: "string", default: "read-only" },
     },
     strict: true,
   });
@@ -499,6 +500,13 @@ function cmdStart(argv) {
   const effort = values.effort || "high";
   const threadId = values["thread-id"] || "";
   const timeout = parseInt(values.timeout || "3600", 10);
+  const sandbox = values.sandbox || "read-only";
+
+  const VALID_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"];
+  if (!VALID_SANDBOXES.includes(sandbox)) {
+    process.stderr.write(`Error: --sandbox must be one of: ${VALID_SANDBOXES.join(", ")}\n`);
+    return EXIT_ERROR;
+  }
 
   if (!workingDir) {
     process.stderr.write("Error: --working-dir is required\n");
@@ -553,7 +561,7 @@ function cmdStart(argv) {
   try {
     // Launch Codex
     const { pid: codexPid, pgid } = launchCodex(
-      stateDir, resolvedWorkingDir, timeout, threadId, effort,
+      stateDir, resolvedWorkingDir, timeout, threadId, effort, sandbox,
     );
     codexPgid = pgid;
 
@@ -570,6 +578,7 @@ function cmdStart(argv) {
       state_dir: stateDir,
       working_dir: resolvedWorkingDir,
       effort,
+      sandbox,
       timeout,
       started_at: now,
       thread_id: threadId,
@@ -797,7 +806,7 @@ function main() {
         "codex-runner.js — Cross-platform runner for Codex CLI\n\n" +
         "Usage:\n" +
         "  node codex-runner.js version\n" +
-        "  node codex-runner.js start --working-dir <dir> [--effort <level>] [--thread-id <id>] [--timeout <s>]\n" +
+        "  node codex-runner.js start --working-dir <dir> [--effort <level>] [--thread-id <id>] [--timeout <s>] [--sandbox <mode>]\n" +
         "  node codex-runner.js poll <state_dir>\n" +
         "  node codex-runner.js stop <state_dir>\n",
       );

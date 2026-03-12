@@ -6,13 +6,21 @@ This schema is for each Codex round output. The final user-facing synthesis uses
 
 ```markdown
 ### Key Insights
+- [insight] — Source: [URL or "analysis"]
 - ...
 
 ### Considerations
+- [consideration] — Source: [URL or "analysis"]
 - ...
 
 ### Recommendations
 - ...
+
+### Sources
+| # | URL | Description |
+|---|-----|-------------|
+| 1 | https://... | Official docs for X |
+| 2 | https://... | Benchmark comparison |
 
 ### Open Questions
 - ...

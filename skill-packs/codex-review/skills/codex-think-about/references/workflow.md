@@ -24,7 +24,7 @@
 Set `ROUND=1`.
 
 ```bash
-STATE_OUTPUT=$(printf '%s' "$PROMPT" | node "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT")
+STATE_OUTPUT=$(printf '%s' "$PROMPT" | node "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT" --sandbox danger-full-access)
 STATE_DIR=${STATE_OUTPUT#CODEX_STARTED:}
 ```
 
@@ -34,17 +34,18 @@ STATE_DIR=${STATE_OUTPUT#CODEX_STARTED:}
 POLL_OUTPUT=$(node "$RUNNER" poll "$STATE_DIR")
 ```
 
-Adaptive intervals — start slow, speed up:
+Adaptive intervals — start slow, speed up (longer than other skills due to web requests):
 
-**Round 1 (first review):**
-- Poll 1: wait 60s
+**Round 1 (first review — includes web research):**
+- Poll 1: wait 90s
 - Poll 2: wait 60s
 - Poll 3: wait 30s
 - Poll 4+: wait 15s
 
 **Round 2+ (rebuttal rounds):**
-- Poll 1: wait 30s
-- Poll 2+: wait 15s
+- Poll 1: wait 45s
+- Poll 2: wait 30s
+- Poll 3+: wait 15s
 
 After each poll, parse the status lines and report **specific activities** to the user. NEVER say generic messages like "Codex is running" or "still waiting" — these provide no information.
 
@@ -56,7 +57,11 @@ After each poll, parse the status lines and report **specific activities** to th
 | `Codex running: ... 'git diff ...'` | Codex reading repo diff |
 | `Codex running: ... 'cat src/foo.ts'` | Codex reading file `src/foo.ts` |
 | `Codex running: ... 'rg -n "pattern" ...'` | Codex searching for `pattern` in code |
+| `Codex running: ... 'curl ...'` | Codex fetching web content |
+| Multiple curl commands completed | Codex researched {N} web sources |
 | Multiple completed commands | Codex read {N} files, analyzing results |
+| `Codex changed: <path> (<kind>)` | **WARNING: Codex modified file `<path>`** — see Step 4.5 |
+| `Codex running: ... 'wget ...'` | **WARNING: wget detected** — may write files, monitor Step 4.5 |
 
 **Report template:** "Codex [{elapsed}s]: {specific activity summary}" — always include elapsed time and concrete description.
 
@@ -71,12 +76,76 @@ Stop on `completed|failed|timeout|stalled`.
 ## 4) Claude Response
 After `POLL:completed`:
 1. Read Codex output from `$STATE_DIR/review.md`.
-2. Parse Key Insights, Considerations, Recommendations, Open Questions, Confidence Level.
+2. Parse Key Insights, Considerations, Recommendations, Sources, Open Questions, Confidence Level.
 3. Parse Suggested Status (advisory) — use as a signal but Claude makes the final status decision.
 4. List agreements with evidence.
 5. List disagreements with rebuttals.
 6. Add missing angles or new perspectives.
-7. Set status: `CONTINUE`, `CONSENSUS`, or `STALEMATE`. Consider Codex's Suggested Status but override if evidence warrants a different assessment.
+7. Validate Sources table — note any claims lacking citations.
+8. Set status: `CONTINUE`, `CONSENSUS`, or `STALEMATE`. Consider Codex's Suggested Status but override if evidence warrants a different assessment.
+
+## 4.5) File Modification Guard
+
+After each round completes, check if Codex modified any project files. `danger-full-access` sandbox is for web research ONLY — file writes are forbidden by prompt but not enforced by sandbox.
+
+**IMPORTANT: Capture a baseline BEFORE each round starts.** The guard compares post-round state against this baseline, not against a clean working tree. This avoids false positives when the repo already has uncommitted changes.
+
+**In a git repo:**
+
+Before starting each round:
+```bash
+BASELINE=$(git status --porcelain --untracked-files=all --ignored 2>/dev/null)
+```
+
+After round completes:
+```bash
+CURRENT=$(git status --porcelain --untracked-files=all --ignored 2>/dev/null)
+```
+
+Compare `BASELINE` vs `CURRENT`. If there are NEW lines in `CURRENT` that were not in `BASELINE`, Codex modified files. Use `--ignored` flag to also detect writes to gitignored paths (e.g. `dist/`, `coverage/`, `.env.*`).
+
+**Outside a git repo (fallback):**
+
+Before starting each round, create a baseline snapshot using a portable method. Since `find -printf` is GNU-only (not available on macOS/BSD), use a cross-platform approach:
+
+```bash
+# Create a temp dir for baseline BEFORE starting the round (STATE_DIR doesn't exist yet)
+FS_GUARD_DIR=$(mktemp -d)
+
+# Snapshot: list all files with mtime (portable across macOS and Linux)
+# Parentheses ensure the || fallback output is always piped to sort
+( find . -not -path './.codex-review/*' -type f -exec stat -f '%m %N' {} + 2>/dev/null \
+  || find . -not -path './.codex-review/*' -type f -exec stat -c '%Y %n' {} + 2>/dev/null ) \
+  | sort > "$FS_GUARD_DIR/fs-baseline.txt"
+```
+
+After starting the round (STATE_DIR now exists), copy baseline for reference:
+```bash
+cp "$FS_GUARD_DIR/fs-baseline.txt" "$STATE_DIR/fs-baseline.txt"
+```
+
+After round completes:
+```bash
+( find . -not -path './.codex-review/*' -type f -exec stat -f '%m %N' {} + 2>/dev/null \
+  || find . -not -path './.codex-review/*' -type f -exec stat -c '%Y %n' {} + 2>/dev/null ) \
+  | sort > "$STATE_DIR/fs-after.txt"
+```
+
+Compare by extracting paths and classifying changes:
+- Files in `fs-after.txt` but not in `fs-baseline.txt` (by path) → **added**
+- Files in `fs-baseline.txt` but not in `fs-after.txt` (by path) → **deleted**
+- Files in both but with different mtime → **modified**
+
+Use `comm` or `awk` on the path column (field 2) to classify. Do NOT interpret raw `diff` `<`/`>` markers directly — a modified file appears as both `<` and `>` with different mtimes.
+
+Clean up: `rm -rf "$FS_GUARD_DIR"` after round.
+
+**If file changes detected:**
+1. **STOP the workflow immediately.** Do NOT continue to the next round.
+2. List every file that was modified, created, or deleted.
+3. Warn the user: "Codex violated file modification rules. The following files were changed: [list]"
+4. **Do NOT automatically revert.** Let the user decide how to handle the changes.
+5. Run cleanup (Step 8) to stop the Codex process.
 
 ## 5) Resume Round 2+
 
@@ -86,6 +155,8 @@ Build Round 2+ prompt from `references/prompts.md` (Response Prompt template):
 - Replace `{NEW_PERSPECTIVES}` with new angles from step 4.
 - Replace `{CONTINUE_OR_CONSENSUS_OR_STALEMATE}` with status from step 4.
 - Replace `{OUTPUT_FORMAT}` by copying the entire fenced code block from `references/output-format.md`.
+
+**Note:** Sandbox mode (`danger-full-access`) persists automatically via `codex exec resume --thread-id`. Do NOT pass `--sandbox` on resume — it is inherited from the original thread.
 
 ```bash
 STATE_OUTPUT=$(printf '%s' "$RESPONSE_PROMPT" | node "$RUNNER" start \
@@ -114,6 +185,13 @@ STATE_DIR=${STATE_OUTPUT#CODEX_STARTED:}
 
 ### Recommendations
 - {actionable recommendations}
+
+### Consolidated Sources
+| # | URL | Description | Used By |
+|---|-----|-------------|---------|
+| 1 | https://... | ... | Codex |
+| 2 | https://... | ... | Claude |
+| 3 | https://... | ... | Both |
 
 ### Open Questions
 - {unresolved questions}
