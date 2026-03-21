@@ -14,8 +14,6 @@ After staging changes (draft mode) or after committing (last mode). Use to verif
 ## Prerequisites
 - **Draft mode**: user provides draft commit message text. Staged changes available for alignment check.
 - **Last mode**: recent commits exist (`git log -n N`). Repository has commit history.
-- `codex` CLI is installed and authenticated.
-- `codex-review` skill pack is installed (`npx github:lploc94/codex_skill`).
 
 ## Runner
 

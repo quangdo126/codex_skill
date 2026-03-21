@@ -13,8 +13,6 @@ After creating a plan but before implementing code. Reviews plan quality — not
 
 ## Prerequisites
 - A Markdown plan file exists (e.g. `plan.md`) with headings for sections, steps, or phases.
-- `codex` CLI is installed and authenticated.
-- `codex-review` skill pack is installed (`npx github:lploc94/codex_skill`).
 
 ## Runner
 

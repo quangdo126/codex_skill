@@ -44,8 +44,12 @@ Build Codex prompt from `references/prompts.md`. Start as background subprocess:
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-parallel-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
+```
 
-START_OUTPUT=$(printf '%s' "$CODEX_PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT")
+Write the assembled Codex prompt to `$SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+
+```bash
+START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT")
 ```
 
 ### 2b) Spawn 4 Claude Reviewer Agents
@@ -183,8 +187,11 @@ For each round:
    - Exclude already-resolved items.
 
 2. Resume Codex thread:
+
+   Write the debate prompt to `$SESSION_DIR/prompt.txt` (overwrites previous round's prompt).
+
    ```bash
-   START_OUTPUT=$(printf '%s' "$DEBATE_PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
+   START_OUTPUT=$(node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
    ```
 
 3. Poll (Round 2+ intervals: 30s/15s...).

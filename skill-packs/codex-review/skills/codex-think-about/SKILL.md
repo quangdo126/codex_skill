@@ -13,8 +13,6 @@ When you want to debate a technical decision or design question before implement
 
 ## Prerequisites
 - A clear question or decision topic from the user.
-- `codex` CLI installed and authenticated.
-- `codex-review` skill pack is installed (`npx github:lploc94/codex_skill`).
 
 ## Runner
 

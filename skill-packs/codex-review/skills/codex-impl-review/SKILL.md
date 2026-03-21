@@ -14,8 +14,6 @@ After writing code, before committing. Use for uncommitted working-tree changes 
 ## Prerequisites
 - **Working-tree mode** (default): working tree has staged or unstaged changes.
 - **Branch mode**: current branch differs from base branch (has commits not in base).
-- `codex` CLI is installed and authenticated.
-- `codex-review` skill pack is installed (`npx github:lploc94/codex_skill`).
 
 ## Runner
 

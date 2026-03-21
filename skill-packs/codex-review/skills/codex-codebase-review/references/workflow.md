@@ -148,8 +148,12 @@ Include:
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-codebase-review --working-dir "$PWD")
 CHUNK_SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
+```
 
-START_OUTPUT=$(printf '%s' "$CHUNK_PROMPT" | node "$RUNNER" start "$CHUNK_SESSION_DIR" --effort "$EFFORT")
+Write the assembled chunk prompt to `$CHUNK_SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+
+```bash
+START_OUTPUT=$(node "$RUNNER" start "$CHUNK_SESSION_DIR" --effort "$EFFORT")
 ```
 
 Track CHUNK_SESSION_DIR in a list for cleanup.
@@ -251,8 +255,12 @@ Standard start-poll-stop cycle. Same as chunk review.
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-codebase-review --working-dir "$PWD")
 VALIDATION_SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
+```
 
-START_OUTPUT=$(printf '%s' "$VALIDATION_PROMPT" | node "$RUNNER" start "$VALIDATION_SESSION_DIR" --effort "$EFFORT")
+Write the validation prompt to `$VALIDATION_SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+
+```bash
+START_OUTPUT=$(node "$RUNNER" start "$VALIDATION_SESSION_DIR" --effort "$EFFORT")
 ```
 
 Track VALIDATION_SESSION_DIR for cleanup.

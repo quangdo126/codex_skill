@@ -694,15 +694,22 @@ function cmdStart(argv) {
     return EXIT_CODEX_NOT_FOUND;
   }
 
-  // Read prompt from stdin
-  const prompt = readStdinSync();
-  if (!prompt.trim()) {
-    process.stderr.write("Error: no prompt provided on stdin\n");
-    return EXIT_ERROR;
+  // Read prompt: prefer prompt.txt pre-written to session dir (avoids shell quoting),
+  // fallback to stdin for backward compat (CI scripts, etc.)
+  const promptFile = path.join(resolvedSessionDir, "prompt.txt");
+  let prompt;
+  if (fs.existsSync(promptFile)) {
+    const fileContent = fs.readFileSync(promptFile, "utf8");
+    if (fileContent.trim()) prompt = fileContent;
   }
-
-  // Write prompt (session dir already exists from init)
-  fs.writeFileSync(path.join(resolvedSessionDir, "prompt.txt"), prompt, "utf8");
+  if (!prompt) {
+    prompt = readStdinSync();
+    if (!prompt.trim()) {
+      process.stderr.write("Error: no prompt provided (write prompt.txt to session dir or pipe via stdin)\n");
+      return EXIT_ERROR;
+    }
+    fs.writeFileSync(promptFile, prompt, "utf8");
+  }
 
   // Track for rollback
   let codexPgid = null;
@@ -818,15 +825,22 @@ function cmdResume(argv) {
     return EXIT_CODEX_NOT_FOUND;
   }
 
-  // Read prompt from stdin (BEFORE clearing old artifacts — if stdin empty, abort without data loss)
-  const prompt = readStdinSync();
-  if (!prompt.trim()) {
-    process.stderr.write("Error: no prompt provided on stdin\n");
-    return EXIT_ERROR;
+  // Read prompt: prefer prompt.txt pre-written to session dir (avoids shell quoting),
+  // fallback to stdin for backward compat (CI scripts, etc.)
+  const promptFile = path.join(resolvedSessionDir, "prompt.txt");
+  let prompt;
+  if (fs.existsSync(promptFile)) {
+    const fileContent = fs.readFileSync(promptFile, "utf8");
+    if (fileContent.trim()) prompt = fileContent;
   }
-
-  // Write prompt (overwrite)
-  fs.writeFileSync(path.join(resolvedSessionDir, "prompt.txt"), prompt, "utf8");
+  if (!prompt) {
+    prompt = readStdinSync();
+    if (!prompt.trim()) {
+      process.stderr.write("Error: no prompt provided (write prompt.txt to session dir or pipe via stdin)\n");
+      return EXIT_ERROR;
+    }
+    fs.writeFileSync(promptFile, prompt, "utf8");
+  }
 
   // Track for rollback
   let codexPgid = null;

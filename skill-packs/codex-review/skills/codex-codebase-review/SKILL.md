@@ -13,8 +13,6 @@ For full codebase audit (50–500+ files). Not for incremental change review —
 
 ## Prerequisites
 - Source files in working directory.
-- `codex` CLI is installed and authenticated.
-- `codex-review` skill pack is installed (`npx github:lploc94/codex_skill`).
 
 ## Runner
 

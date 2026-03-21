@@ -14,8 +14,6 @@ When changes touch auth, crypto, SQL queries, user input processing, file upload
 ## Prerequisites
 - Working directory with source code
 - Optional: dependency manifest files (package.json, requirements.txt, go.mod) for supply chain analysis
-- `codex` CLI is installed and authenticated
-- `codex-review` skill pack is installed (`npx github:lploc94/codex_skill`)
 
 ## Runner
 

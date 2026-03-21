@@ -81,18 +81,15 @@ Include:
 ### Step 1: Start Codex Review
 
 ```bash
-# Build security review prompt (see references/prompts.md)
-PROMPT="$(cat <<'EOF'
-You are a security expert conducting a thorough security review...
-[Full prompt from references/prompts.md]
-EOF
-)"
-
-# Initialize session and start review
+# Initialize session
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
+```
 
-START_OUTPUT=$(printf '%s' "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT")
+Build the security review prompt (see `references/prompts.md`), then write it to `$SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+
+```bash
+START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT")
 ```
 
 **Validate init output:** Verify `INIT_OUTPUT` starts with `CODEX_SESSION:`. If not, report error.
@@ -246,8 +243,10 @@ Format:
 
 ### Step 2: Resume Thread
 
+Write the Round 2 prompt to `$SESSION_DIR/prompt.txt` (overwrites previous round's prompt).
+
 ```bash
-START_OUTPUT=$(printf '%s' "$ROUND2_PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
+START_OUTPUT=$(node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
 ```
 
 ### Step 3: Parse Round 2 Response
@@ -457,10 +456,11 @@ git status --short
 # 2. Get diff
 git diff HEAD
 
-# 3. Initialize session and start review (prompt should be piped via stdin)
+# 3. Initialize session and start review
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-START_OUTPUT=$(printf '%s' "$SECURITY_PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort high)
+printf '%s' "$SECURITY_PROMPT" > "$SESSION_DIR/prompt.txt"
+START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort high)
 
 # 4. Focus on changed lines and surrounding context
 ```
@@ -480,7 +480,8 @@ git diff origin/main...HEAD
 # 4. Initialize session and start review (prompt should be piped via stdin)
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-START_OUTPUT=$(printf '%s' "$SECURITY_PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort high)
+printf '%s' "$SECURITY_PROMPT" > "$SESSION_DIR/prompt.txt"
+START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort high)
 
 # 5. Review all commits in branch
 git log origin/main..HEAD --oneline
@@ -492,10 +493,11 @@ git log origin/main..HEAD --oneline
 # 1. Identify critical files
 find . -name "*.js" -o -name "*.py" -o -name "*.java" | grep -E "(auth|login|password|token|api|admin)"
 
-# 2. Initialize session and start review (may take longer, prompt should be piped via stdin)
+# 2. Initialize session and start review (may take longer)
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-START_OUTPUT=$(printf '%s' "$SECURITY_PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort high)
+printf '%s' "$SECURITY_PROMPT" > "$SESSION_DIR/prompt.txt"
+START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort high)
 
 # 3. Prioritize high-risk areas:
 #    - Authentication/authorization
@@ -548,7 +550,8 @@ START_OUTPUT=$(printf '%s' "$SECURITY_PROMPT" | node "$RUNNER" start "$SESSION_D
 echo "Running security review on staged changes..."
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-START_OUTPUT=$(printf '%s' "$SECURITY_PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort low)
+printf '%s' "$SECURITY_PROMPT" > "$SESSION_DIR/prompt.txt"
+START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort low)
 
 # Poll until complete
 while true; do
@@ -583,7 +586,8 @@ jobs:
         run: |
           INIT_OUTPUT=$(node codex-runner.js init --skill-name codex-security-review --working-dir .)
           SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-          printf '%s' "$SECURITY_PROMPT" | node codex-runner.js start "$SESSION_DIR" --effort high
+          printf '%s' "$SECURITY_PROMPT" > "$SESSION_DIR/prompt.txt"
+          node codex-runner.js start "$SESSION_DIR" --effort high
           while true; do
             POLL=$(node codex-runner.js poll "$SESSION_DIR")
             case "$POLL" in POLL:running:*) sleep 15;; *) break;; esac

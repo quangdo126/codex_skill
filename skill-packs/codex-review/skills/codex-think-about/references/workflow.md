@@ -22,8 +22,12 @@ Set `ROUND=1`.
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-think-about --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
+```
 
-START_OUTPUT=$(printf '%s' "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT" --sandbox danger-full-access)
+Write the assembled prompt to `$SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+
+```bash
+START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT" --sandbox danger-full-access)
 ```
 
 **Do NOT poll yet.** Proceed immediately to Step 2.5.
@@ -204,8 +208,10 @@ Build Round 2+ prompt from `references/prompts.md` (Response Prompt template):
 
 **Note:** Sandbox mode (`danger-full-access`) persists automatically via the Codex thread. Do NOT pass `--sandbox` on resume — it is inherited from the original thread.
 
+Write the response prompt to `$SESSION_DIR/prompt.txt` (overwrites previous round's prompt).
+
 ```bash
-START_OUTPUT=$(printf '%s' "$RESPONSE_PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
+START_OUTPUT=$(node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
 ```
 
 **→ Go back to step 3 (Poll).** Increment `ROUND` counter. After poll completes, repeat step 4 and check stop conditions. If `ROUND >= 5`, force final synthesis — do NOT resume. Otherwise, continue until a stop condition is reached.

@@ -78,8 +78,12 @@ Before starting Round 1:
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-impl-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
+```
 
-START_OUTPUT=$(printf '%s' "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT")
+Write the assembled prompt to `$SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+
+```bash
+START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT")
 ```
 
 **Validate init output:** Verify `INIT_OUTPUT` starts with `CODEX_SESSION:`. If not, report error.
@@ -141,8 +145,10 @@ After parsing each round's review, append round summary to `$SESSION_DIR/rounds.
 
 Build the rebuttal prompt from `references/prompts.md` — use the **Working-tree mode** or **Branch mode** Rebuttal Prompt template depending on the review mode. For branch mode, replace all `{BASE_BRANCH}` placeholders so Codex re-reads the correct diff scope. Replace all other placeholders (`{SESSION_CONTEXT}`, `{OUTPUT_FORMAT}`, etc.).
 
+Write the rebuttal prompt to `$SESSION_DIR/prompt.txt` (overwrites previous round's prompt).
+
 ```bash
-START_OUTPUT=$(printf '%s' "$REBUTTAL_PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
+START_OUTPUT=$(node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
 ```
 
 Then **go back to step 3 (Poll).** After poll completes, repeat step 4 (Apply/Rebut) and check completion criteria below. If not met, resume again (step 5). Continue this loop until a completion criterion is reached.

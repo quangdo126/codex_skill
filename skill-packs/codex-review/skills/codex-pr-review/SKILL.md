@@ -14,8 +14,6 @@ Before opening or merging a pull request. Covers branch diff, commit history, an
 ## Prerequisites
 - Current branch differs from base branch (has commits not in base).
 - `git diff <base>...HEAD` produces output.
-- `codex` CLI is installed and authenticated.
-- `codex-review` skill pack is installed (`npx github:lploc94/codex_skill`).
 
 ## Runner
 
