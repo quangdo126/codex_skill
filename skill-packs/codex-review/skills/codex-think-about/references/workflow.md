@@ -6,10 +6,6 @@
 - Relevant files or external facts.
 - Reasoning effort level.
 
-## 1.5) Pre-flight Checks
-1. Verify `codex` CLI is in PATH: `command -v codex`. If not found, tell user to install.
-2. Verify working directory is writable (for state directory creation).
-
 ## 1.8) Prompt Assembly
 
 1. Read the Round 1 template from `references/prompts.md`.

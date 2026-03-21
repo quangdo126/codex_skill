@@ -44,12 +44,10 @@ Announce: `"Detected: plan=docs/superpowers/plans/2026-03-18-example.md, effort=
 ## 1.5) Pre-flight Checks
 
 Before starting Round 1:
-1. Verify plan file exists and is readable: `test -r "$PLAN_PATH"`. If not, report error and stop.
-2. Verify plan file is writable: `test -w "$PLAN_PATH"`. If not writable, stop and ask user to provide a writable plan path. Multi-round debate requires saving plan edits in-place.
-3. Verify plan file is Markdown (`.md` extension or contains markdown headings).
-4. Verify `codex` CLI is in PATH: `command -v codex`. If not found, tell user to install.
-5. Verify working directory is writable (for state directory creation).
-6. If acceptance criteria not provided by user, derive from plan: scan for headings like "Goals", "Outcomes", "Success criteria", "Expected results" and extract content.
+1. Read the plan file and verify it is Markdown: must have `.md` extension AND contain at least one markdown heading (`#`). Reading the file here ensures fail-fast if the path is unreadable.
+2. If acceptance criteria not provided by user, derive from plan: scan for headings like "Goals", "Outcomes", "Success criteria", "Expected results" and extract content.
+
+> **Write failures**: If saving the updated plan file fails in step 4/7, report the error and ask user for an alternative writable path. No pre-flight write check is needed — Claude Code's write tool provides a clear error at save time.
 
 ## 1.8) Prompt Assembly
 

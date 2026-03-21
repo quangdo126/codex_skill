@@ -65,8 +65,6 @@ Ask user: `working-tree` (default) or `branch`.
 Before starting Round 1:
 1. Working-tree mode: verify working tree has changes: `git diff --quiet && git diff --cached --quiet` should FAIL (exit 1). If both succeed (exit 0), there are no changes — report to user and stop.
 2. Branch mode: verify branch diff exists: `git diff <base>...HEAD --quiet` should FAIL. If no diff, report to user and stop.
-3. Verify `codex` CLI is in PATH: `command -v codex`. If not found, tell user to install.
-4. Verify working directory is writable (for state directory creation).
 
 ## 1.8) Prompt Assembly
 

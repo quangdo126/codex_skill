@@ -26,10 +26,8 @@ Announce: `"Detected: mode=draft, effort=medium. Proceeding — reply to overrid
 
 ## 1.5) Pre-flight Checks
 1. Verify inside a git repository: `git rev-parse --show-toplevel`. If not a git repo, abort.
-2. Verify `codex` CLI is in PATH: `command -v codex`. If not found, tell user to install.
-3. Verify working directory is writable (for `.codex-review/runs/` creation).
-4. **Draft mode**: `git diff --cached --quiet` must FAIL (exit 1). If exit 0, there are no staged changes — abort with "no staged changes to verify message against". Note: `--quiet` implies `--exit-code`, so Git returns 1 when differences exist.
-5. **Last mode**: Validate `N` is a positive integer. Verify `git rev-list --count HEAD` > 0 (history exists). Clamp N to available history. Warn if aggregate diff is empty (metadata-only commits).
+2. **Draft mode**: `git diff --cached --quiet` must FAIL (exit 1). If exit 0, there are no staged changes — abort with "no staged changes to verify message against". Note: `--quiet` implies `--exit-code`, so Git returns 1 when differences exist.
+3. **Last mode**: Validate `N` is a positive integer. Verify `git rev-list --count HEAD` > 0 (history exists). Clamp N to available history. Warn if aggregate diff is empty (metadata-only commits).
 
 ## 1.6) Convention Discovery
 Discover project commit conventions in priority order. Stop at first match:

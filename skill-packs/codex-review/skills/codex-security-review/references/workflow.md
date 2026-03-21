@@ -56,16 +56,10 @@ Use `AskUserQuestion` to collect these inputs in a single prompt.
 
 ### Step 2: Validate Prerequisites
 
-```bash
-# Check codex CLI is available
-which codex || where codex
-
-# Verify working directory has code
-ls -la
-
-# If branch mode, verify base branch exists
-git rev-parse --verify <base-branch>
-```
+- Verify inside a git repository: `git rev-parse --show-toplevel`. If not a git repo, abort (unless scope=full on non-git project).
+- **Working-tree mode**: verify changes exist: `git diff --quiet && git diff --cached --quiet` must FAIL.
+- **Branch mode**: verify base branch exists: `git rev-parse --verify <base-branch>`. Verify diff exists: `git diff <base>...HEAD --quiet` must FAIL.
+- **Full mode**: no additional git checks needed (scans entire codebase).
 
 ### Step 3: Build Security Review Prompt
 

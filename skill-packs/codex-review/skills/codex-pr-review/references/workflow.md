@@ -47,10 +47,8 @@ Block only if `$BASE` cannot be resolved (both auto-detection and fallback fail)
 
 ## 1.5) Pre-flight Checks
 1. Verify inside a git repository: `git rev-parse --show-toplevel`. If not a git repo, abort.
-2. Verify `codex` CLI is in PATH: `command -v codex`. If not found, tell user to install.
-3. Verify working directory is writable (for `.codex-review/runs/` creation).
-4. Verify branch diff exists: `git diff <base>...HEAD --quiet` must FAIL (exit 1). If exit 0, there are no changes — abort with "no diff between current branch and base branch".
-5. Verify commit history exists: `git rev-list --count <base>..HEAD` must be > 0. If 0, abort with "no commits ahead of base branch".
+2. Verify branch diff exists: `git diff <base>...HEAD --quiet` must FAIL (exit 1). If exit 0, there are no changes — abort with "no diff between current branch and base branch".
+3. Verify commit history exists: `git rev-list --count <base>..HEAD` must be > 0. If 0, abort with "no commits ahead of base branch".
 
 ## 1.8) Prompt Assembly
 

@@ -119,6 +119,17 @@ try {
   }).trim();
   console.log(`  codex-runner.js version: ${versionOutput}`);
 
+  // Check Codex CLI availability (warning only)
+  try {
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+    execFileSync(whichCmd, ['codex'], { encoding: 'utf8', timeout: 5000 });
+  } catch {
+    console.warn('');
+    console.warn('⚠️  Warning: codex CLI not found in PATH.');
+    console.warn('   Skills require the Codex CLI to run.');
+    console.warn('   Install: npm install -g @openai/codex');
+  }
+
   // 4. Atomic swap per directory: backup old → move staging → cleanup
   fs.mkdirSync(skillsRoot, { recursive: true });
   const backups = [];    // dirs that had a previous install → backed up
