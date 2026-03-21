@@ -37,10 +37,10 @@ RUNNER="{{RUNNER_PATH}}"
 ### Effort Level Guide
 | Level    | Depth             | Best for                        | Typical time |
 |----------|-------------------|---------------------------------|--------------|
-| `low`    | Surface check     | Quick sanity check              | ~3-5 min     |
-| `medium` | Standard review   | Most day-to-day work            | ~8-12 min    |
-| `high`   | Deep analysis     | Important features              | ~15-20 min   |
-| `xhigh`  | Exhaustive        | Critical/security-sensitive     | ~25-40 min   |
+| `low`    | Surface check     | Quick sanity check              | ~2-4 min     |
+| `medium` | Standard review   | Most day-to-day work            | ~5-10 min    |
+| `high`   | Deep analysis     | Important features              | ~10-15 min   |
+| `xhigh`  | Exhaustive        | Critical/security-sensitive     | ~20-30 min   |
 
 ## Required References
 - Detailed execution: `references/workflow.md`

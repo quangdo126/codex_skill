@@ -9,12 +9,7 @@ description: Review/debate plans before implementation between Claude Code and C
 Use this skill to adversarially review a plan before implementation starts.
 
 ## When to Use
-Use **after creating a plan** but **before implementing code**.
-
-Typical workflow:
-1. Create plan (plan.md) → 2. `/codex-plan-review` → 3. Refine plan → 4. Implement → 5. `/codex-impl-review`
-
-Not a substitute for code review. Reviews plan quality, not implementation.
+After creating a plan but before implementing code. Reviews plan quality — not a substitute for `/codex-impl-review` code review. Typical flow: plan → `/codex-plan-review` → refine → implement.
 
 ## Prerequisites
 - A Markdown plan file exists (e.g. `plan.md`) with headings for sections, steps, or phases.
@@ -40,11 +35,11 @@ RUNNER="{{RUNNER_PATH}}"
 
 ### Effort Level Guide
 | Level    | Depth             | Best for                        | Typical time |
-|----------|-------------------|---------------------------------|-------------|
-| `low`    | Surface check     | Quick sanity check              | ~2-3 min |
-| `medium` | Standard review   | Most day-to-day work            | ~5-8 min |
-| `high`   | Deep analysis     | Important features              | ~10-15 min |
-| `xhigh`  | Exhaustive        | Critical/security-sensitive     | ~20-30 min |
+|----------|-------------------|---------------------------------|--------------|
+| `low`    | Surface check     | Quick sanity check              | ~2-3 min     |
+| `medium` | Standard review   | Most day-to-day work            | ~5-8 min     |
+| `high`   | Deep analysis     | Important features              | ~10-15 min   |
+| `xhigh`  | Exhaustive        | Critical/security-sensitive     | ~20-30 min   |
 
 ## Required References
 - Detailed execution steps: `references/workflow.md`
