@@ -1,5 +1,42 @@
 # Implementation Review Workflow
 
+## Smart Default Detection
+
+> **Context:** These detection commands run inside Claude Code where `git` is available. They assume a git repository. All `git` commands are wrapped in `2>/dev/null` to fail silently for non-git directories or edge cases (detached HEAD, no upstream tracking branch set). Detection is best-effort — if a command fails, the fallback default is used.
+
+Before asking the user anything, auto-detect and announce:
+
+**scope detection (FIRST):**
+```bash
+HAS_WORKING_CHANGES=$(git status --short 2>/dev/null | grep -v '^??' | wc -l)
+HAS_BRANCH_COMMITS=$(git rev-list @{u}..HEAD 2>/dev/null | wc -l)
+if [ "$HAS_WORKING_CHANGES" -gt 0 ]; then SCOPE="working-tree"
+elif [ "$HAS_BRANCH_COMMITS" -gt 0 ]; then SCOPE="branch"
+else SCOPE=""  # ask user
+fi
+```
+
+**effort detection (AFTER scope — adapts to detected scope):**
+```bash
+if [ "$SCOPE" = "branch" ]; then
+  FILES_CHANGED=$(git diff --name-only @{u}..HEAD 2>/dev/null | wc -l)
+else
+  FILES_CHANGED=$(git diff --name-only 2>/dev/null | wc -l)
+fi
+if [ "$FILES_CHANGED" -lt 10 ]; then EFFORT="medium"
+elif [ "$FILES_CHANGED" -lt 50 ]; then EFFORT="high"
+else EFFORT="xhigh"
+fi
+# Fallback: default high
+EFFORT=${EFFORT:-high}
+```
+
+Announce: `"Detected: scope=working-tree, effort=high (23 files changed). Proceeding — reply to override."`
+
+Only block execution for `$SCOPE` when both detection methods return 0 (no changes anywhere).
+
+---
+
 ## 1) Collect Inputs
 
 ### Mode Selection

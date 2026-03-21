@@ -1,10 +1,41 @@
 # PR Review Workflow
 
+## Smart Default Detection
+
+**base-branch detection:**
+```bash
+BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+if [ -z "$BASE" ]; then
+  # First-match semantics: remote refs preferred, then local
+  if git show-ref --verify --quiet refs/remotes/origin/main; then BASE="main"
+  elif git show-ref --verify --quiet refs/remotes/origin/master; then BASE="master"
+  elif git show-ref --verify --quiet refs/heads/main; then BASE="main"
+  elif git show-ref --verify --quiet refs/heads/master; then BASE="master"
+  fi
+fi
+```
+
+**effort detection** (after base is resolved):
+```bash
+FILES_CHANGED=$(git diff --name-only "$BASE"...HEAD 2>/dev/null | wc -l)
+if [ "$FILES_CHANGED" -lt 10 ]; then EFFORT="medium"
+elif [ "$FILES_CHANGED" -lt 50 ]; then EFFORT="high"
+else EFFORT="xhigh"
+fi
+EFFORT=${EFFORT:-high}
+```
+
+Announce: `"Detected: base=main, effort=high (15 files changed). Proceeding — reply to override. PR title/description are optional."`
+
+Block only if `$BASE` cannot be resolved (both auto-detection and fallback fail).
+
+---
+
 ## 1) Collect Inputs
 - **Base branch discovery:**
   1. Ask user for base branch, suggest default.
   2. Validate ref: `git rev-parse --verify <base>` — fail-fast if not found.
-  3. Fallback order if user doesn't specify: `main` → `master` → remote HEAD (`git symbolic-ref refs/remotes/origin/HEAD`).
+  3. Fallback order if user doesn't specify: remote HEAD (`git symbolic-ref refs/remotes/origin/HEAD`) → `origin/main` → `origin/master` → local `main` → local `master`.
   4. Confirm with user if using fallback.
 - PR title and description (optional — user may not have written them yet).
 - Branch diff: `git diff <base>...HEAD`.

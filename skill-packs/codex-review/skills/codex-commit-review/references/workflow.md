@@ -1,5 +1,23 @@
 # Commit Review Workflow
 
+## Smart Default Detection
+
+**mode detection:**
+```bash
+git diff --cached --quiet
+EXIT=$?
+if [ $EXIT -eq 1 ]; then MODE="draft"  # exit 1 = staged changes present
+elif [ $EXIT -eq 0 ]; then MODE="last" # exit 0 = no staged changes
+else MODE=""  # git error (not a repo, etc.) — leave unset, ask user
+fi
+```
+
+If `draft`, ask user for the commit message text to review. If `last`, use N=1 default.
+
+Announce: `"Detected: mode=draft, effort=medium. Proceeding — reply to override."`
+
+---
+
 ## 1) Collect Inputs
 - **Input source** (`draft` or `last`).
 - **Draft mode**: user-provided commit message text. Run `git diff --cached` for staged changes context.
