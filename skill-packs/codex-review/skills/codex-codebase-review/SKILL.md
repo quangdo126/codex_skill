@@ -1,6 +1,6 @@
 ---
 name: codex-codebase-review
-description: Review entire codebases (50-500+ files) by chunking into modules, reviewing each chunk in a separate Codex session, then synthesizing cross-cutting findings. No runner changes needed.
+description: Review entire codebases (50-500+ files) by chunking into modules, reviewing each chunk in a separate Codex session, then synthesizing cross-cutting findings.
 ---
 
 # Codex Codebase Review
@@ -9,7 +9,7 @@ description: Review entire codebases (50-500+ files) by chunking into modules, r
 Review large codebases (50-500+ files) that exceed single-session context limits. Splits codebase into module-based chunks, reviews each in an independent Codex session, then Claude synthesizes cross-cutting findings across modules.
 
 ## When to Use
-For full codebase audit (50–500+ files). Not for incremental change review — use `/codex-impl-review` for that. Run periodically for architecture/quality sweeps or before major releases.
+For full codebase audit (50-500+ files). Not for incremental change review — use `/codex-impl-review` for that. Run periodically for architecture/quality sweeps or before major releases.
 
 ## Prerequisites
 - Source files in working directory.
@@ -18,20 +18,21 @@ For full codebase audit (50–500+ files). Not for incremental change review —
 
 ```bash
 RUNNER="{{RUNNER_PATH}}"
+SKILLS_DIR="{{SKILLS_DIR}}"
 ```
 
 ## Workflow
 1. **Collect inputs**: Auto-detect effort and announce default before asking anything.
-   - **effort**: Count source files `find . -type f -name '*.js' -o -name '*.ts' -o -name '*.py' -o -name '*.go' -o -name '*.rs' -o -name '*.java' -o -name '*.rb' -o -name '*.c' -o -name '*.cpp' -o -name '*.h' | wc -l` — <50 → `medium`, 50–200 → `high`, >200 → `xhigh`; default `high`.
+   - **effort**: Count source files `find . -type f -name '*.js' -o -name '*.ts' -o -name '*.py' -o -name '*.go' -o -name '*.rs' -o -name '*.java' -o -name '*.rb' -o -name '*.c' -o -name '*.cpp' -o -name '*.h' | wc -l` — <50 → `medium`, 50-200 → `high`, >200 → `xhigh`; default `high`.
    - Announce: "Detected: effort=`$EFFORT` (N files changed). Proceeding — reply to override."
    - Set `EFFORT`. Also ask: parallel factor (default 3 chunks), focus areas (optional).
 2. **Discovery**: detect project type, list source files, identify module boundaries.
 3. **Chunking**: group files into 500-2000 line chunks, present chunk plan.
-4. **Review loop**: for each chunk — build prompt, `node "$RUNNER" init --skill-name codex-codebase-review --working-dir "$PWD"` then `node "$RUNNER" start "$SESSION_DIR"`, poll, parse ISSUE-{N}, propagate context.
+4. **Review loop**: for each chunk — init session, render prompt via `render --template chunk-review`, pipe to `start`, poll JSON output, parse `review.blocks`. Each chunk has its own init/start/poll/finalize cycle. Use `status` to inspect any session at any time.
 5. **Cross-cutting analysis**: Claude synthesizes all chunk findings — inconsistencies, API contracts, DRY violations, integration, architecture.
-6. **Validation** (effort >= high): feed CROSS-{N} findings to Codex for verification.
-7. **Final report**: overview table, per-module findings, cross-cutting findings, action items.
-8. **Cleanup**: stop ALL tracked SESSION_DIRs — always runs regardless of outcome.
+6. **Validation** (effort >= high): init new session, render validation prompt via `render --template validation`, start, poll, parse `RESPONSE-{N}` blocks from `review.format === "codebase-validation"`.
+7. **Final report**: overview table, per-module findings, cross-cutting findings, action items. Create master session via init, finalize with aggregated stats.
+8. **Cleanup**: stop ALL tracked SESSION_DIRs — always runs regardless of outcome. Each `stop` returns JSON confirmation.
 
 ### Effort Level Guide
 | Level    | Discovery        | Cross-cutting    | Validation   | Typical time        |
@@ -47,8 +48,11 @@ RUNNER="{{RUNNER_PATH}}"
 - Output contract: `references/output-format.md`
 
 ## Rules
+- If invoked during Claude Code plan mode, exit plan mode first — this skill requires code editing.
 - Codex reviews only; it does not edit files.
 - No cross-contamination between chunk sessions — each chunk is independent.
 - Context propagation: only high/critical findings from prior chunks, capped at ~2000 tokens.
 - Cleanup always runs — stop every tracked SESSION_DIR regardless of outcome.
 - Scope is full codebase only — for diff review use `/codex-impl-review`.
+- **Runner manages all session state** — do NOT manually read/write `rounds.json`, `meta.json`, or `prompt.txt` in the session directory.
+- **All runner commands return JSON** (except `version`, `init`, `render`) — always parse structured output, never scrape stderr.

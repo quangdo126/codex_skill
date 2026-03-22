@@ -18,6 +18,7 @@ After creating a plan but before implementing code. Reviews plan quality — not
 
 ```bash
 RUNNER="{{RUNNER_PATH}}"
+SKILLS_DIR="$(dirname "$(dirname "$RUNNER")")"
 ```
 
 ## Workflow
@@ -27,13 +28,16 @@ RUNNER="{{RUNNER_PATH}}"
    - Announce detected plan path and effort. Proceeding — reply to override.
    - Set `PLAN_PATH` and `EFFORT`. Block only if plan file cannot be found or resolved.
 2. Run pre-flight checks (see `references/workflow.md` §1.5).
-3. Build prompt from `references/prompts.md` (`Plan Review Prompt`), following the Placeholder Injection Guide.
-4. Start round 1: `node "$RUNNER" init --skill-name codex-plan-review --working-dir "$PWD"` to create session, then `node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"`.
-5. Poll with adaptive intervals (Round 1: 60s/60s/30s/15s..., Round 2+: 30s/15s...). After each poll, report **specific activities** from poll output (e.g. which files Codex is reading, what topic it is analyzing). See `references/workflow.md` for parsing guide. NEVER report generic "Codex is running" — always extract concrete details.
-6. Parse Codex issues (`ISSUE-{N}` + `VERDICT`) using `references/output-format.md`.
-7. Apply valid fixes to the plan, **save the plan file**, rebut invalid points, and resume with `node "$RUNNER" resume "$SESSION_DIR"`.
-8. Repeat until `APPROVE`, stalemate, or hard cap (5 rounds).
-9. Return final debate summary, residual risks, and final plan path.
+3. Init session: `node "$RUNNER" init --skill-name codex-plan-review --working-dir "$PWD"` → parse `SESSION_DIR`.
+4. Render prompt: `echo '{"PLAN_PATH":"/abs/path","USER_REQUEST":"...","SESSION_CONTEXT":"...","ACCEPTANCE_CRITERIA":"..."}' | node "$RUNNER" render --skill codex-plan-review --template round1 --skills-dir "$SKILLS_DIR"`.
+5. Start round 1: `echo "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"` → validate JSON output.
+6. Poll: `node "$RUNNER" poll "$SESSION_DIR"` — returns JSON with `status`, `review.blocks`, `review.verdict`, and `activities`. Report **specific activities** from the activities array (e.g. which files Codex is reading, what topic it is analyzing). NEVER report generic "Codex is running" — always extract concrete details.
+7. Parse `review.blocks` from poll JSON — each block has `id`, `category`, `severity`, `location`, `problem`, `evidence`, `suggested_fix`. Use `review.raw_markdown` as fallback.
+8. Apply valid fixes to the plan, **save the plan file**, rebut invalid points with evidence.
+9. Render rebuttal: `echo '{"PLAN_PATH":"...","SESSION_CONTEXT":"...","FIXED_ITEMS":"...","DISPUTED_ITEMS":"..."}' | node "$RUNNER" render --skill codex-plan-review --template rebuttal --skills-dir "$SKILLS_DIR"`.
+10. **Resume**: `echo "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"` → validate JSON. **Go back to step 6 (Poll).** Repeat steps 6→7→8→9→10 until `APPROVE`, stalemate, or hard cap (5 rounds).
+11. Finalize: `echo '{"verdict":"..."}' | node "$RUNNER" finalize "$SESSION_DIR"`.
+12. Cleanup: `node "$RUNNER" stop "$SESSION_DIR"`. Return final debate summary, residual risks, and final plan path.
 
 ### Effort Level Guide
 | Level    | Depth             | Best for                        | Typical time |
@@ -53,3 +57,5 @@ RUNNER="{{RUNNER_PATH}}"
 - Do not implement code in this skill.
 - Do not claim consensus without explicit `VERDICT: APPROVE` or user-accepted stalemate.
 - Preserve traceability: each accepted issue maps to a concrete plan edit.
+- **Runner manages all session state** — do NOT manually read/write `rounds.json`, `meta.json`, or `prompt.txt` in the session directory.
+- **No manual file I/O** — Claude NEVER writes files to the session directory. All session state is managed by runner commands (`init`, `start`, `poll`, `resume`, `finalize`, `stop`).

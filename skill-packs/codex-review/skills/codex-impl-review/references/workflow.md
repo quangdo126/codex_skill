@@ -66,33 +66,56 @@ Before starting Round 1:
 1. Working-tree mode: verify working tree has changes: `git diff --quiet && git diff --cached --quiet` should FAIL (exit 1). If both succeed (exit 0), there are no changes — report to user and stop.
 2. Branch mode: verify branch diff exists: `git diff <base>...HEAD --quiet` should FAIL. If no diff, report to user and stop.
 
-## 1.8) Prompt Assembly
+## 2) Init Session
 
-1. Read the appropriate Round 1 template from `references/prompts.md` (Working Tree or Branch).
-2. Replace `{USER_REQUEST}` with user's task description (or default).
-3. Build `{SESSION_CONTEXT}` using the structured schema from `references/prompts.md` Placeholder Injection Guide.
-4. Replace `{OUTPUT_FORMAT}` by copying the entire fenced code block from `references/output-format.md`.
-5. For branch mode: replace `{BASE_BRANCH}` with the validated base branch name.
-
-## 2) Start Round 1
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-impl-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
 ```
 
-Write the assembled prompt to `$SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+**Validate:** `INIT_OUTPUT` must start with `CODEX_SESSION:`. If not, report error and stop.
 
+## 3) Render Prompt
+
+Use the `render` command to assemble the prompt from templates. The runner reads `references/prompts.md`, finds the template by heading, replaces placeholders from stdin JSON, and auto-injects `{OUTPUT_FORMAT}` from `references/output-format.md`.
+
+For working-tree mode:
 ```bash
-START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT")
+PROMPT=$(echo '{"USER_REQUEST":"...","SESSION_CONTEXT":"..."}' | \
+  node "$RUNNER" render --skill codex-impl-review --template working-tree-round1 --skills-dir "$SKILLS_DIR")
 ```
 
-**Validate init output:** Verify `INIT_OUTPUT` starts with `CODEX_SESSION:`. If not, report error.
-**Validate start output:** Verify `START_OUTPUT` starts with `CODEX_STARTED:`. If not, report error.
+For branch mode:
+```bash
+PROMPT=$(echo '{"USER_REQUEST":"...","SESSION_CONTEXT":"...","BASE_BRANCH":"main"}' | \
+  node "$RUNNER" render --skill codex-impl-review --template branch-round1 --skills-dir "$SKILLS_DIR")
+```
 
-## 3) Poll
+**Placeholder values:**
+- `USER_REQUEST`: User's original task description, or default "Review uncommitted changes for correctness and quality".
+- `SESSION_CONTEXT`: Structured context block (see `references/prompts.md` § Placeholder Injection Guide for schema). If user provides no context, omit — the runner uses the default from prompts.md.
+- `BASE_BRANCH`: Required for branch mode only. The validated base branch name.
+
+**Validate:** `render` writes the rendered prompt to stdout. If stderr contains an error JSON with `"status":"error"`, report the error and stop.
+
+## 4) Start Round 1
 
 ```bash
-POLL_OUTPUT=$(node "$RUNNER" poll "$SESSION_DIR")
+echo "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"
+```
+
+**Validate JSON output:**
+```json
+{ "status": "started", "session_dir": "/path", "round": 1 }
+```
+If `status` is `"error"`, check `code` field:
+- `"CODEX_NOT_FOUND"` → tell user to install codex CLI.
+- Other codes → report `error` message.
+
+## 5) Poll
+
+```bash
+POLL_JSON=$(node "$RUNNER" poll "$SESSION_DIR")
 ```
 
 Adaptive intervals — start slow, speed up:
@@ -107,54 +130,116 @@ Adaptive intervals — start slow, speed up:
 - Poll 1: wait 30s
 - Poll 2+: wait 15s
 
-After each poll, report **specific activities** to the user by parsing stderr lines. Stderr contains timestamped progress events like `[Ns] Codex thinking: ...`, `[Ns] Codex running: ...`, `[Ns] Codex completed: ...`. Use these to build a specific, informative status update. NEVER say generic messages like "Codex is running" or "still waiting" — these provide no information.
+**Parse JSON output:**
 
-**Poll stdout format:**
-- Line 1: `POLL:{status}:{elapsed}[:{exit_code}:{details}]`
-- Line 2 (if completed): `THREAD_ID:{id}`
-
-**Poll stderr format (progress events):**
-- `[{elapsed}s] Codex is thinking...` — Codex started a new turn
-- `[{elapsed}s] Codex thinking: {reasoning text}` — Codex reasoning about something
-- `[{elapsed}s] Codex running: {command}` — Codex executing a command
-- `[{elapsed}s] Codex completed: {command}` — Codex finished a command
-
-**Report template:** Parse the stderr lines and report what Codex is actually doing. Example: `"Codex [30s]: reading git diff, analyzing src/auth.js"`
-
-Continue while status is `running`.
-Stop on `completed|failed|timeout|stalled`.
-
-## 4) Apply/Rebut
-- Parse `ISSUE-{N}` blocks.
-- For valid issues: edit code and record fix evidence.
-- For invalid issues: write rebuttal with concrete proof (paths, tests, behavior).
-- **Branch mode only**: after applying fixes, commit them (`git add` + `git commit`) before resuming. Codex reads `git diff <base>...HEAD` which only includes committed changes — uncommitted fixes will be invisible to Codex and cause repeated issues.
-- After applying fixes, verify with the narrowest relevant automated check:
-  - If test suite exists: run relevant tests.
-  - If type-checked language: run typecheck/compile.
-  - If no suitable automation: document manual fix evidence (diff + reasoning + affected paths).
-  - Do NOT claim an issue is fixed without some form of verification evidence.
-- Record the set of open (unresolved) ISSUE-{N} IDs for stalemate tracking.
-
-After parsing each round's review, append round summary to `$SESSION_DIR/rounds.json`:
-- Read existing rounds.json or start with empty array `[]`
-- Append: `{ "round": N, "elapsed_seconds": ..., "verdict": "...", "issues_found": ..., "issues_fixed": ..., "issues_disputed": ... }`
-- Write back to `$SESSION_DIR/rounds.json`
-
-## 5) Resume Thread
-
-Build the rebuttal prompt from `references/prompts.md` — use the **Working-tree mode** or **Branch mode** Rebuttal Prompt template depending on the review mode. For branch mode, replace all `{BASE_BRANCH}` placeholders so Codex re-reads the correct diff scope. Replace all other placeholders (`{SESSION_CONTEXT}`, `{OUTPUT_FORMAT}`, etc.).
-
-Write the rebuttal prompt to `$SESSION_DIR/prompt.txt` (overwrites previous round's prompt).
-
-```bash
-START_OUTPUT=$(node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
+Running:
+```json
+{
+  "status": "running",
+  "round": 1,
+  "elapsed_seconds": 45,
+  "activities": [
+    { "time": 30, "type": "thinking", "detail": "analyzing auth flow" },
+    { "time": 35, "type": "command_started", "detail": "cat src/auth.js" }
+  ]
+}
 ```
 
-Then **go back to step 3 (Poll).** After poll completes, repeat step 4 (Apply/Rebut) and check completion criteria below. If not met, resume again (step 5). Continue this loop until a completion criterion is reached.
+Report **specific activities** from the `activities` array. Example: `"Codex [45s]: reading src/auth.js, analyzing auth flow"`. NEVER say generic messages like "Codex is running" or "still waiting" — always extract concrete details from activities.
 
-## 6) Completion Criteria
-- Codex returns `VERDICT: APPROVE`.
+Continue while `status` is `"running"`.
+Stop on `"completed"|"failed"|"timeout"|"stalled"`.
+
+**Completed:**
+```json
+{
+  "status": "completed",
+  "round": 1,
+  "elapsed_seconds": 120,
+  "thread_id": "thread_abc",
+  "review": {
+    "format": "review",
+    "blocks": [
+      { "id": 1, "prefix": "ISSUE", "title": "Missing validation", "category": "security", "severity": "high", "location": "src/api.js:23", "problem": "...", "evidence": "...", "suggested_fix": "...", "extra": {} }
+    ],
+    "verdict": { "status": "REVISE", "reason": "..." },
+    "overall_assessment": null,
+    "raw_markdown": "..."
+  },
+  "activities": [...]
+}
+```
+
+**Failed/Timeout/Stalled:**
+```json
+{
+  "status": "failed|timeout|stalled",
+  "round": 1,
+  "elapsed_seconds": 3600,
+  "exit_code": 2,
+  "error": "Timeout after 3600s",
+  "review": null,
+  "activities": [...]
+}
+```
+
+## 6) Apply/Rebut
+
+Parse issues from the poll JSON `review.blocks` array:
+- Each block has `id`, `prefix`, `title`, `category`, `severity`, `location`, `problem`, `evidence`, `suggested_fix`, and optionally `why_it_matters`, `extra`.
+- The verdict is in `review.verdict.status` (e.g., `"REVISE"`, `"APPROVE"`).
+- `review.raw_markdown` is always available as fallback.
+
+For valid issues: edit code and record fix evidence.
+For invalid issues: write rebuttal with concrete proof (paths, tests, behavior).
+
+**Branch mode only**: after applying fixes, commit them (`git add` + `git commit`) before resuming. Codex reads `git diff <base>...HEAD` which only includes committed changes — uncommitted fixes will be invisible to Codex and cause repeated issues.
+
+After applying fixes, verify with the narrowest relevant automated check:
+- If test suite exists: run relevant tests.
+- If type-checked language: run typecheck/compile.
+- If no suitable automation: document manual fix evidence (diff + reasoning + affected paths).
+- Do NOT claim an issue is fixed without some form of verification evidence.
+
+Record the set of open (unresolved) ISSUE-{N} IDs for stalemate tracking.
+
+> **Note:** Round tracking is automatic. The runner manages `rounds.json` — do NOT read or write it manually.
+
+## 7) Resume Thread
+
+### 7a) Render Rebuttal Prompt
+
+For working-tree mode:
+```bash
+PROMPT=$(echo '{"USER_REQUEST":"...","SESSION_CONTEXT":"...","FIXED_ITEMS":"...","DISPUTED_ITEMS":"..."}' | \
+  node "$RUNNER" render --skill codex-impl-review --template rebuttal-working-tree --skills-dir "$SKILLS_DIR")
+```
+
+For branch mode:
+```bash
+PROMPT=$(echo '{"USER_REQUEST":"...","SESSION_CONTEXT":"...","FIXED_ITEMS":"...","DISPUTED_ITEMS":"...","BASE_BRANCH":"main"}' | \
+  node "$RUNNER" render --skill codex-impl-review --template rebuttal-branch --skills-dir "$SKILLS_DIR")
+```
+
+**Placeholder values for rebuttals:**
+- `FIXED_ITEMS`: List of fixed issues with evidence (e.g., "ISSUE-1: Fixed — added input validation at src/api.js:25").
+- `DISPUTED_ITEMS`: List of disputed issues with rebuttal reasoning.
+
+### 7b) Resume Codex
+
+```bash
+echo "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"
+```
+
+**Validate resume output (JSON):**
+```json
+{ "status": "started", "session_dir": "/path", "round": 2, "thread_id": "thread_abc" }
+```
+
+Then **go back to step 5 (Poll).** After poll completes, repeat step 6 (Apply/Rebut) and check completion criteria below. If not met, resume again (step 7). Continue this loop until a completion criterion is reached.
+
+## 8) Completion Criteria
+- Codex returns `VERDICT: APPROVE` (check `review.verdict.status === "APPROVE"` in poll JSON).
 - Or user accepts a documented stalemate.
 - **Hard cap: 5 rounds.** At cap, force final synthesis with unresolved issues listed as residual risks.
 
@@ -171,7 +256,7 @@ At stalemate:
 3. If current round < 5, ask user: accept current state or force one more round.
 4. If current round = 5 (hard cap), do NOT offer another round. Force final synthesis.
 
-## 7) Final Output
+## 9) Final Output
 
 ### Review Summary
 | Metric | Value |
@@ -188,49 +273,44 @@ Then present:
 - Residual risks and unresolved assumptions.
 - Recommended next steps.
 
-## 8) Cleanup
+## 10) Session Finalization
+
+After the final round completes, finalize the session:
+
+```bash
+echo '{"verdict":"APPROVE","scope":"working-tree"}' | node "$RUNNER" finalize "$SESSION_DIR"
+```
+
+For branch mode, use `"scope":"branch"`. Optionally include issue tracking:
+```bash
+echo '{"verdict":"APPROVE","scope":"working-tree","issues":{"total_found":5,"total_fixed":3,"total_disputed":2}}' | \
+  node "$RUNNER" finalize "$SESSION_DIR"
+```
+
+The runner auto-computes `meta.json` with timing, round count, and session metadata.
+
+Report `$SESSION_DIR` path to the user in the final summary.
+
+## 11) Cleanup
 ```bash
 node "$RUNNER" stop "$SESSION_DIR"
 ```
 Kill any remaining Codex/watchdog processes. Always run this step, even if the review ended due to failure or timeout.
 
-## Session Finalization
-
-After the final round completes, write session metadata to the session directory (review.md is already present from poll):
-
-```bash
-cat > "$SESSION_DIR/meta.json" << METAEOF
-{
-  "skill": "codex-impl-review",
-  "version": 15,
-  "effort": "$EFFORT",
-  "scope": "$SCOPE",
-  "rounds": ${ROUND_COUNT:-0},
-  "verdict": "$FINAL_VERDICT",
-  "timing": { "total_seconds": ${ELAPSED_SECONDS:-0} },
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-METAEOF
-echo "Session saved to: $SESSION_DIR"
-```
-
-Report `$SESSION_DIR` path to the user in the final summary.
-
 ## Error Handling
 
-Runner `poll` returns status via output string `POLL:<status>:<elapsed>[:exit_code:details]`. Normally exits 0, but may exit non-zero on invalid state dir or I/O error — handle both:
+### Poll Errors
+Poll returns JSON. Parse `status` field:
+- `"completed"` → success, review data in `review` field.
+- `"failed"` (exit_code 3) → turn failed. Retry once. If still failing, report error to user.
+- `"timeout"` (exit_code 2) → timeout. Report partial results from `review.raw_markdown` if available. Suggest retry with lower effort.
+- `"stalled"` (exit_code 4) → stalled. Report partial results. Suggest lower effort.
+- `"error"` → infrastructure error. Report `error` field to user.
 
-**Parse POLL string (exit 0):**
-- `POLL:completed:...` → success, read review.md
-- `POLL:failed:...:3:...` → turn failed. Retry once. If still failing, report error to user.
-- `POLL:timeout:...:2:...` → timeout. Report partial results if review.md exists. Suggest retry with lower effort.
-- `POLL:stalled:...:4:...` → stalled. Report partial results. Suggest lower effort.
+### Start/Resume Errors
+Start and resume return JSON. If `status` is `"error"`:
+- Check `code` field: `"CODEX_NOT_FOUND"` → tell user to install codex. Other codes → report `error` message.
 
-**Fallback when poll exits non-zero or output is unparseable:**
-- Log error output, report infrastructure error to user, suggest retry.
-
-Runner `start` may fail with exit code:
-- 1 → generic error (invalid args, I/O). Report error message to user.
-- 5 → Codex CLI not found. Tell user to install codex.
-
-Always run cleanup (step 8) regardless of error.
+### General Rules
+- Always run cleanup (step 11) regardless of error.
+- Use `review.raw_markdown` as fallback if structured parsing misses edge cases.

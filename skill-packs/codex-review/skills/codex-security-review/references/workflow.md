@@ -12,7 +12,7 @@ HAS_WORKING_CHANGES=$(git status --short 2>/dev/null | grep -v '^??' | wc -l)
 HAS_BRANCH_COMMITS=$(git rev-list @{u}..HEAD 2>/dev/null | wc -l)
 if [ "$HAS_WORKING_CHANGES" -gt 0 ]; then SCOPE="working-tree"
 elif [ "$HAS_BRANCH_COMMITS" -gt 0 ]; then SCOPE="branch"
-else SCOPE=""  # ask user
+else SCOPE=""  # ask user — offer "full" as additional option
 fi
 ```
 
@@ -20,6 +20,8 @@ fi
 ```bash
 if [ "$SCOPE" = "branch" ]; then
   FILES_CHANGED=$(git diff --name-only @{u}..HEAD 2>/dev/null | wc -l)
+elif [ "$SCOPE" = "full" ]; then
+  FILES_CHANGED=50  # default to high for full codebase
 else
   FILES_CHANGED=$(git diff --name-only 2>/dev/null | wc -l)
 fi
@@ -37,564 +39,312 @@ Only block execution for `$SCOPE` when both detection methods return 0 (no chang
 
 ---
 
-## Overview
+## 1) Collect Inputs
 
-This document describes the execution workflow for security-focused code review using the `codex-security-review` skill.
+### Mode Selection
+Ask user: `working-tree` (default), `branch`, or `full`.
 
----
+### Working-tree mode:
+- Working directory path.
+- Uncommitted changes (`git status`, `git diff`, `git diff --cached`).
 
-## Phase 1: Setup and Initialization
+### Branch mode:
+- **Base branch discovery:**
+  1. Ask user for base branch, suggest default.
+  2. Validate ref: `git rev-parse --verify <base>` — fail-fast if not found.
+  3. Fallback order if user doesn't specify: `main` → `master` → remote HEAD (`git symbolic-ref refs/remotes/origin/HEAD`).
+  4. Confirm with user if using fallback.
+- **Clean working tree required**: run `git diff --quiet && git diff --cached --quiet`. If uncommitted changes exist, tell user to commit or stash first, or switch to working-tree mode.
+- Branch diff: `git diff <base>...HEAD`.
+- Commit log: `git log <base>..HEAD --oneline`.
 
-### Step 1: Gather User Input
+### Full mode:
+- Working directory path.
+- No git diff checks needed (scans entire codebase).
+- Identify high-risk areas: auth, database, external APIs, file operations, crypto.
 
-Ask the user for:
-1. **Effort level**: `low`, `medium`, `high`, or `xhigh` (default: `high`)
-2. **Review scope**: `working-tree`, `branch`, or `full` (default: `working-tree`)
-3. **Base branch** (if scope is `branch`): Discover and validate base branch
+## 1.5) Pre-flight Checks
 
-Use `AskUserQuestion` to collect these inputs in a single prompt.
+Before starting Round 1:
+1. Working-tree mode: verify working tree has changes: `git diff --quiet && git diff --cached --quiet` should FAIL (exit 1). If both succeed (exit 0), there are no changes — report to user and stop.
+2. Branch mode: verify branch diff exists: `git diff <base>...HEAD --quiet` should FAIL. If no diff, report to user and stop.
+3. Full mode: no pre-flight checks needed (scans entire codebase).
 
-### Step 2: Validate Prerequisites
+## 2) Start Round 1
 
-- Verify inside a git repository: `git rev-parse --show-toplevel`. If not a git repo, abort (unless scope=full on non-git project).
-- **Working-tree mode**: verify changes exist: `git diff --quiet && git diff --cached --quiet` must FAIL.
-- **Branch mode**: verify base branch exists: `git rev-parse --verify <base-branch>`. Verify diff exists: `git diff <base>...HEAD --quiet` must FAIL.
-- **Full mode**: no additional git checks needed (scans entire codebase).
-
-### Step 3: Build Security Review Prompt
-
-Select appropriate prompt template from `references/prompts.md`:
-- **Working-tree mode**: Focus on uncommitted changes
-- **Branch mode**: Focus on branch diff vs base
-- **Full mode**: Analyze entire codebase
-
-Include:
-- OWASP Top 10 2021 checklist
-- CWE pattern detection
-- Secrets scanning instructions
-- Effort-appropriate depth
-
----
-
-## Phase 2: Round 1 - Initial Security Analysis
-
-### Step 1: Start Codex Review
+### 2a) Initialize Session
 
 ```bash
-# Initialize session
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
 ```
 
-Build the security review prompt (see `references/prompts.md`), then write it to `$SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
-
-```bash
-START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT")
-```
-
 **Validate init output:** Verify `INIT_OUTPUT` starts with `CODEX_SESSION:`. If not, report error.
-**Validate start output:** Verify `START_OUTPUT` starts with `CODEX_STARTED:`. If not, report error.
 
-### Step 2: Poll for Progress
+### 2b) Render Prompt
 
-Use adaptive polling intervals:
-- **Round 1**: 60s, 60s, 30s, 15s, 15s, 15s...
-- **Round 2+**: 30s, 15s, 15s, 15s...
-
+Compute `SKILLS_DIR` from the runner path — it is two directories up from the runner:
 ```bash
-node "$RUNNER" poll "$SESSION_DIR"
+SKILLS_DIR="$(dirname "$(dirname "$RUNNER")")"
 ```
 
-**Parse poll output** and report specific activities:
-- ✅ "Codex is analyzing authentication logic in src/auth.js"
-- ✅ "Checking for SQL injection patterns in database queries"
-- ✅ "Scanning for hardcoded credentials in config files"
-- ❌ "Codex is running" (too generic)
+**Step 1: Render scope-specific instructions:**
 
-### Step 3: Parse Security Findings
+For working-tree mode:
+```bash
+SCOPE_INSTRUCTIONS=$(echo '{}' | \
+  node "$RUNNER" render --skill codex-security-review --template working-tree --skills-dir "$SKILLS_DIR")
+```
 
-When poll returns `POLL:completed`:
+For branch mode:
+```bash
+SCOPE_INSTRUCTIONS=$(echo '{"BASE_BRANCH":"main"}' | \
+  node "$RUNNER" render --skill codex-security-review --template branch --skills-dir "$SKILLS_DIR")
+```
 
-1. Read review output from `$SESSION_DIR/review.md`
-2. Parse ISSUE-{N} blocks using regex:
-   ```regex
-   ISSUE-(\d+): (.+?)\n
-   Category: (.+?)\n
-   Severity: (.+?)\n
-   Confidence: (.+?)\n
-   CWE: (.+?)\n
-   OWASP: (.+?)\n
-   ```
-3. Extract VERDICT block
-4. Build structured findings list
+For full mode:
+```bash
+SCOPE_INSTRUCTIONS=$(echo '{}' | \
+  node "$RUNNER" render --skill codex-security-review --template full --skills-dir "$SKILLS_DIR")
+```
 
-After parsing each round's review, append round summary to `$SESSION_DIR/rounds.json`:
-- Read existing rounds.json or start with empty array `[]`
-- Append: `{ "round": N, "elapsed_seconds": ..., "verdict": "...", "issues_found": ..., "issues_fixed": ..., "issues_disputed": ... }`
-- Write back to `$SESSION_DIR/rounds.json`
+**Step 2: Render round1 prompt with scope instructions:**
+```bash
+PROMPT=$(echo '{"WORKING_DIR":"/path/to/project","SCOPE":"working-tree","EFFORT":"high","BASE_BRANCH":"","SCOPE_SPECIFIC_INSTRUCTIONS":"'"$SCOPE_INSTRUCTIONS"'"}' | \
+  node "$RUNNER" render --skill codex-security-review --template round1 --skills-dir "$SKILLS_DIR")
+```
 
-### Step 4: Present Findings to User
+`{OUTPUT_FORMAT}` is auto-injected by the render command from `references/output-format.md`.
 
-Group findings by severity:
+### 2c) Start Codex
 
+```bash
+echo "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"
+```
+
+**Validate start output (JSON):**
+```json
+{ "status": "started", "session_dir": "/path", "round": 1 }
+```
+If `status` is `"error"`, report to user.
+
+## 3) Poll
+
+```bash
+POLL_JSON=$(node "$RUNNER" poll "$SESSION_DIR")
+```
+
+Adaptive intervals — start slow, speed up:
+
+**Round 1 (first review):**
+- Poll 1: wait 60s
+- Poll 2: wait 60s
+- Poll 3: wait 30s
+- Poll 4+: wait 15s
+
+**Round 2+ (rebuttal rounds):**
+- Poll 1: wait 30s
+- Poll 2+: wait 15s
+
+**Parse JSON output:**
+
+Running:
+```json
+{
+  "status": "running",
+  "round": 1,
+  "elapsed_seconds": 45,
+  "activities": [
+    { "time": 30, "type": "thinking", "detail": "analyzing authentication flow for broken access control" },
+    { "time": 35, "type": "command_started", "detail": "cat src/auth.js" }
+  ]
+}
+```
+
+Report **specific activities** from the `activities` array. Example: `"Codex [45s]: scanning for SQL injection patterns in database queries"`. NEVER say generic messages like "Codex is running" or "still waiting" — always extract concrete details from activities.
+
+Continue while `status` is `"running"`.
+Stop on `"completed"|"failed"|"timeout"|"stalled"`.
+
+**Completed:**
+```json
+{
+  "status": "completed",
+  "round": 1,
+  "elapsed_seconds": 120,
+  "thread_id": "thread_abc",
+  "review": {
+    "format": "security-review",
+    "blocks": [
+      { "id": 1, "prefix": "ISSUE", "title": "SQL Injection in user search", "category": "injection", "severity": "critical", "confidence": "high", "cwe": "CWE-89", "owasp": "A03:2021", "problem": "...", "evidence": "...", "attack_vector": "...", "suggested_fix": "...", "extra": {} }
+    ],
+    "verdict": { "status": "REVISE", "reason": "...", "risk_summary": { "critical": 1, "high": 0, "medium": 2, "low": 1 } },
+    "overall_assessment": null,
+    "raw_markdown": "..."
+  },
+  "activities": [...]
+}
+```
+
+**Failed/Timeout/Stalled:**
+```json
+{
+  "status": "failed|timeout|stalled",
+  "round": 1,
+  "elapsed_seconds": 3600,
+  "exit_code": 2,
+  "error": "Timeout after 3600s",
+  "review": null,
+  "activities": [...]
+}
+```
+
+## 4) Apply/Rebut
+
+Parse issues from the poll JSON `review.blocks` array:
+- Each block has `id`, `prefix`, `title`, `category`, `severity`, `confidence`, `cwe`, `owasp`, `problem`, `evidence`, `attack_vector`, `suggested_fix`, and optionally `extra`.
+- The verdict is in `review.verdict.status` (e.g., `"REVISE"`, `"APPROVE"`).
+- The `review.verdict.risk_summary` contains severity counts: `{ "critical": N, "high": N, "medium": N, "low": N }`.
+- `review.raw_markdown` is always available as fallback.
+
+Present findings grouped by severity:
 ```markdown
 # Security Review Results - Round 1
 
 **Verdict**: REVISE
-**Risk Level**: HIGH
+**Risk Level**: CRITICAL (1 critical, 0 high, 2 medium, 1 low)
 
-## 🔴 Critical Issues (2)
+## Critical Issues (1)
 - ISSUE-1: SQL injection in user search
-- ISSUE-2: Hardcoded AWS credentials
 
-## 🟠 High Issues (3)
-- ISSUE-3: Missing authentication on admin endpoint
-- ISSUE-4: XSS in comment rendering
-- ISSUE-5: Insecure deserialization
+## Medium Issues (2)
+- ISSUE-2: Missing security headers
+- ISSUE-3: Weak password requirements
 
-## 🟡 Medium Issues (5)
-...
-
-## 🟢 Low Issues (2)
-...
+## Low Issues (1)
+- ISSUE-4: Verbose error messages
 ```
 
----
+For valid issues: edit code and record fix evidence.
+For false positives: write rebuttal with concrete proof (paths, tests, mitigating controls).
+For severity disputes: acknowledge issue, explain why severity should differ with context.
 
-## Phase 3: Issue Resolution
+**Branch mode only**: after applying fixes, commit them (`git add` + `git commit`) before resuming. Codex reads `git diff <base>...HEAD` which only includes committed changes — uncommitted fixes will be invisible to Codex and cause repeated issues.
 
-### For Each Finding:
+After applying fixes, verify with the narrowest relevant automated check:
+- If test suite exists: run relevant tests.
+- If type-checked language: run typecheck/compile.
+- If no suitable automation: document manual fix evidence (diff + reasoning + affected paths).
+- Do NOT claim an issue is fixed without some form of verification evidence.
 
-#### Option A: Accept and Fix
+Record the set of open (unresolved) ISSUE-{N} IDs for stalemate tracking.
 
-1. **Verify the finding** is a real vulnerability
-2. **Apply the suggested fix** or implement alternative secure solution
-3. **Document the fix** for round 2 summary
+> **Note:** Round tracking is automatic. The runner manages `rounds.json` — do NOT read or write it manually.
 
-Example:
-```javascript
-// ISSUE-1: SQL injection fixed
-// Before: const query = `SELECT * FROM users WHERE name = '${name}'`;
-// After: const query = 'SELECT * FROM users WHERE name = $1';
-const users = await db.query(query, [name]);
-```
+## 5) Resume Thread
 
-#### Option B: Rebut as False Positive
-
-If the finding is incorrect:
-
-1. **Gather evidence** showing why it's not a vulnerability
-2. **Explain mitigating controls** (e.g., input validation elsewhere)
-3. **Prepare rebuttal** for round 2
-
-Example rebuttal:
-```
-ISSUE-3 is a false positive. The admin endpoint at /api/admin/users 
-is protected by the authenticateAdmin middleware (line 15) which 
-verifies JWT tokens and checks for admin role. The middleware is 
-applied to all /api/admin/* routes in routes/index.js:42.
-```
-
-#### Option C: Dispute Severity/Confidence
-
-If the finding is valid but severity is wrong:
-
-1. **Acknowledge the issue** exists
-2. **Explain why severity should be lower** (or higher)
-3. **Provide context** (internal tool, rate limiting, etc.)
-
-Example:
-```
-ISSUE-5: Agree this is a concern, but severity should be MEDIUM not HIGH.
-This endpoint is internal-only (not exposed to internet) and requires 
-VPN access. Additionally, we have rate limiting (10 req/min) which 
-mitigates brute force attacks.
-```
-
----
-
-## Phase 4: Round 2+ - Debate and Refinement
-
-### Step 1: Build Round 2 Prompt
-
-Include:
-- **Fixed items**: List of accepted issues with applied fixes
-- **Disputed items**: List of rebuttals with evidence
-- **Request**: Ask Codex to review fixes and respond to rebuttals
-
-Format:
-```
-## Fixed Issues
-- ISSUE-1: Applied parameterized query fix
-- ISSUE-2: Moved credentials to environment variables
-
-## Disputed Issues
-- ISSUE-3: False positive - authentication middleware present
-  Evidence: [code snippet showing middleware]
-  
-- ISSUE-5: Severity should be MEDIUM not HIGH
-  Reason: Internal-only endpoint with rate limiting
-
-## Your Task
-1. Verify the fixes for ISSUE-1 and ISSUE-2
-2. Respond to rebuttals for ISSUE-3 and ISSUE-5
-3. Check for new security issues introduced by fixes
-```
-
-### Step 2: Resume Thread
-
-Write the Round 2 prompt to `$SESSION_DIR/prompt.txt` (overwrites previous round's prompt).
+### 5a) Render Rebuttal Prompt
 
 ```bash
-START_OUTPUT=$(node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
+PROMPT=$(echo '{"FIXED_ITEMS":"...","DISPUTED_ITEMS":"..."}' | \
+  node "$RUNNER" render --skill codex-security-review --template round2+ --skills-dir "$SKILLS_DIR")
 ```
 
-### Step 3: Parse Round 2 Response
-
-Look for:
-- **RESPONSE-{N}** blocks (responses to rebuttals)
-- **New ISSUE-{N}** blocks (issues in fixes)
-- **Updated VERDICT**
-
-### Step 4: Iterate Until Consensus
-
-Continue rounds until:
-- ✅ **VERDICT: APPROVE** - All critical/high issues resolved
-- ⚠️ **Stalemate** - Same disputes for 2+ rounds, no progress
-- 🛑 **User stops** - Manual intervention needed
-
----
-
-## Phase 5: Completion and Cleanup
-
-### Step 1: Stop Codex Process
+### 5b) Resume Codex
 
 ```bash
-node "$RUNNER" stop "$SESSION_DIR"
+echo "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"
 ```
 
-### Step 2: Generate Final Security Report
-
-```markdown
-# Security Review Summary
-
-**Project**: {project_name}
-**Scope**: {scope}
-**Effort**: {effort}
-**Rounds**: {round_count}
-**Duration**: {duration}
-
-## Final Verdict: {APPROVE | REVISE | STALEMATE}
-
-## Security Risk Assessment: {CRITICAL | HIGH | MEDIUM | LOW}
-
-### Issues Found: {total_count}
-- Critical: {critical_count} ({fixed_count} fixed, {open_count} open)
-- High: {high_count} ({fixed_count} fixed, {open_count} open)
-- Medium: {medium_count} ({fixed_count} fixed, {open_count} open)
-- Low: {low_count} ({fixed_count} fixed, {open_count} open)
-
-### Resolved Issues
-1. ISSUE-1: SQL injection - FIXED
-2. ISSUE-2: Hardcoded credentials - FIXED
-
-### Remaining Issues
-1. ISSUE-5: Weak password policy - OPEN (severity disputed)
-
-### Recommendations
-1. Rotate AWS credentials immediately (ISSUE-2)
-2. Run dynamic security testing (DAST) for runtime issues
-3. Schedule penetration testing for production deployment
-4. Implement pre-commit hooks for secrets detection
-
-### Next Steps
-- [ ] Apply remaining fixes
-- [ ] Security expert review for disputed findings
-- [ ] Update security documentation
-- [ ] Schedule follow-up security audit
+**Validate resume output (JSON):**
+```json
+{ "status": "started", "session_dir": "/path", "round": 2, "thread_id": "thread_abc" }
 ```
 
-### Step 3: Archive Review Artifacts
+Then **go back to step 3 (Poll).** After poll completes, repeat step 4 (Apply/Rebut) and check completion criteria below. If not met, resume again (step 5). Continue this loop until a completion criterion is reached.
+
+## 6) Completion Criteria
+- Codex returns `VERDICT: APPROVE` (check `review.verdict.status === "APPROVE"` in poll JSON).
+- Or user accepts a documented stalemate.
+- **Hard cap: 5 rounds.** At cap, force final synthesis with unresolved issues listed as residual risks.
+
+## Stalemate Detection
+
+Stalemate occurs when the set of unresolved ISSUE-{N} IDs is identical across 2 consecutive rounds:
+- Track: after each round, record the set of open (not fixed, not withdrawn) issue IDs.
+- If round N and round N-1 have the same open set AND Codex proposed no new issues, declare stalemate.
+- Issue renaming or splitting counts as a new issue (different ID).
+
+At stalemate:
+1. List specific deadlocked points with both sides' final arguments.
+2. Recommend which side to favor based on evidence strength.
+3. If current round < 5, ask user: accept current state or force one more round.
+4. If current round = 5 (hard cap), do NOT offer another round. Force final synthesis.
+
+## 7) Final Output
+
+### Security Review Summary
+| Metric | Value |
+|--------|-------|
+| Rounds | {N} |
+| Verdict | {APPROVE/REVISE/STALEMATE} |
+| Risk Level | {CRITICAL/HIGH/MEDIUM/LOW} |
+| Issues Found | {total} |
+| Issues Fixed | {fixed_count} |
+| Issues Disputed | {disputed_count} |
+
+### Risk Summary
+- Critical: {count} ({fixed} fixed, {open} open)
+- High: {count} ({fixed} fixed, {open} open)
+- Medium: {count} ({fixed} fixed, {open} open)
+- Low: {count} ({fixed} fixed, {open} open)
+
+Then present:
+- Fixed vulnerabilities by severity.
+- Disputed items and rationale.
+- Residual risks and unresolved assumptions.
+- Blocking issues (must fix before merge).
+- Advisory issues (should fix, not blocking).
+- Recommended next steps (dynamic testing, penetration testing, etc.).
+
+## 8) Session Finalization
+
+After the final round completes, finalize the session:
 
 ```bash
-# Copy review artifacts to project docs
-mkdir -p docs/security-reviews
-cp "$SESSION_DIR/review.md" "docs/security-reviews/review-$(date +%Y%m%d).md"
+echo '{"verdict":"APPROVE","scope":"working-tree"}' | node "$RUNNER" finalize "$SESSION_DIR"
 ```
 
----
-
-## Polling Output Parsing
-
-After each poll, report **specific activities** to the user by parsing stderr lines. Stderr contains timestamped progress events like `[Ns] Codex thinking: ...`, `[Ns] Codex running: ...`, `[Ns] Codex completed: ...`. Use these to build a specific, informative status update. NEVER say generic messages like "Codex is running" or "still waiting" — these provide no information.
-
-**Poll stdout format:**
-- Line 1: `POLL:{status}:{elapsed}[:{exit_code}:{details}]`
-- Line 2 (if completed): `THREAD_ID:{id}`
-
-**Poll stderr format (progress events):**
-- `[{elapsed}s] Codex is thinking...` — Codex started a new turn
-- `[{elapsed}s] Codex thinking: {reasoning text}` — Codex reasoning about something
-- `[{elapsed}s] Codex running: {command}` — Codex executing a command
-- `[{elapsed}s] Codex completed: {command}` — Codex finished a command
-
-**Report template:** Parse the stderr lines and report what Codex is actually doing. Example: `"Codex [45s]: scanning for SQL injection patterns in database queries"`
-
-### Status Codes
-
-| Status | Meaning | Action |
-|--------|---------|--------|
-| `running` | In progress | Continue polling |
-| `completed` | Finished | Parse results |
-| `failed` | Error occurred | Check error.log |
-| `timeout` | Exceeded timeout | Stop and report |
-| `stalled` | No output for 3min | Stop and report |
-
----
-
-## Session Finalization
-
-After the final round completes, write session metadata to the session directory (review.md is already present from poll):
-
+For branch mode, use `"scope":"branch"`. For full mode, use `"scope":"full"`. Optionally include issue tracking:
 ```bash
-cat > "$SESSION_DIR/meta.json" << METAEOF
-{
-  "skill": "codex-security-review",
-  "version": 15,
-  "effort": "$EFFORT",
-  "scope": "$SCOPE",
-  "rounds": ${ROUND_COUNT:-0},
-  "verdict": "$FINAL_VERDICT",
-  "timing": { "total_seconds": ${ELAPSED_SECONDS:-0} },
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-METAEOF
-echo "Session saved to: $SESSION_DIR"
+echo '{"verdict":"APPROVE","scope":"working-tree","issues":{"total_found":5,"total_fixed":3,"total_disputed":2}}' | \
+  node "$RUNNER" finalize "$SESSION_DIR"
 ```
+
+The runner auto-computes `meta.json` with timing, round count, and session metadata.
 
 Report `$SESSION_DIR` path to the user in the final summary.
 
+## 9) Cleanup
+```bash
+node "$RUNNER" stop "$SESSION_DIR"
+```
+Kill any remaining Codex/watchdog processes. Always run this step, even if the review ended due to failure or timeout.
+
 ## Error Handling
 
-### Common Errors
+### Poll Errors
+Poll returns JSON. Parse `status` field:
+- `"completed"` → success, review data in `review` field.
+- `"failed"` (exit_code 3) → turn failed. Retry once. If still failing, report error to user.
+- `"timeout"` (exit_code 2) → timeout. Report partial results from `review.raw_markdown` if available. Suggest retry with lower effort.
+- `"stalled"` (exit_code 4) → stalled. Report partial results. Suggest lower effort.
+- `"error"` → infrastructure error. Report `error` field to user.
 
-#### 1. Codex CLI Not Found
-```
-Error: codex CLI not found in PATH
-```
-**Solution**: Install Codex CLI or add to PATH
+### Start/Resume Errors
+Start and resume return JSON. If `status` is `"error"`:
+- Check `code` field: `"CODEX_NOT_FOUND"` → tell user to install codex. Other codes → report `error` message.
 
-#### 2. Working Directory Invalid
-```
-Error: working directory does not exist: /path/to/project
-```
-**Solution**: Verify path and permissions
-
-#### 3. Base Branch Not Found (Branch Mode)
-```
-Error: base branch 'main' does not exist
-```
-**Solution**: Verify branch name, try `git branch -a`
-
-#### 4. No Changes to Review (Working-tree Mode)
-```
-Warning: No uncommitted changes found
-```
-**Solution**: Switch to `branch` or `full` mode
-
-#### 5. Timeout Exceeded
-```
-POLL:timeout:3600s:150:Review exceeded timeout
-```
-**Solution**: Increase timeout or reduce scope
-
-### Recovery Strategies
-
-1. **Timeout**: Increase `--timeout` parameter
-2. **Stalled**: Check network, restart Codex
-3. **Parse Error**: Fallback to manual review of output.jsonl
-4. **False Positives**: Lower confidence threshold, focus on high-confidence findings
-
----
-
-## Effort Level Impact
-
-### Low Effort
-- **Depth**: Surface-level patterns only
-- **Coverage**: Common vulnerabilities (OWASP Top 5)
-- **Time**: ~5-10 minutes
-- **Best for**: Quick pre-commit check
-
-### Medium Effort
-- **Depth**: Standard security review
-- **Coverage**: OWASP Top 10 + secrets
-- **Time**: ~15-30 minutes
-- **Best for**: Pre-merge review
-
-### High Effort
-- **Depth**: Deep analysis with context
-- **Coverage**: OWASP Top 10 + CWE patterns + supply chain
-- **Time**: ~30-60 minutes
-- **Best for**: Pre-production security audit
-
-### XHigh Effort
-- **Depth**: Exhaustive analysis
-- **Coverage**: All security patterns + edge cases
-- **Time**: ~60-120 minutes
-- **Best for**: Critical systems, regulated industries
-
----
-
-## Scope-Specific Workflows
-
-### Working-Tree Mode
-
-```bash
-# 1. Check for uncommitted changes
-git status --short
-
-# 2. Get diff
-git diff HEAD
-
-# 3. Initialize session and start review
-INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD")
-SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-printf '%s' "$SECURITY_PROMPT" > "$SESSION_DIR/prompt.txt"
-START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort high)
-
-# 4. Focus on changed lines and surrounding context
-```
-
-### Branch Mode
-
-```bash
-# 1. Discover base branch
-git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'
-
-# 2. Validate base branch exists
-git rev-parse --verify origin/main
-
-# 3. Get branch diff
-git diff origin/main...HEAD
-
-# 4. Initialize session and start review (prompt should be piped via stdin)
-INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD")
-SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-printf '%s' "$SECURITY_PROMPT" > "$SESSION_DIR/prompt.txt"
-START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort high)
-
-# 5. Review all commits in branch
-git log origin/main..HEAD --oneline
-```
-
-### Full Codebase Mode
-
-```bash
-# 1. Identify critical files
-find . -name "*.js" -o -name "*.py" -o -name "*.java" | grep -E "(auth|login|password|token|api|admin)"
-
-# 2. Initialize session and start review (may take longer)
-INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD")
-SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-printf '%s' "$SECURITY_PROMPT" > "$SESSION_DIR/prompt.txt"
-START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort high)
-
-# 3. Prioritize high-risk areas:
-#    - Authentication/authorization
-#    - Database queries
-#    - External API calls
-#    - File operations
-#    - Cryptographic operations
-```
-
----
-
-## Best Practices
-
-### Before Review
-1. ✅ Commit or stash unrelated changes
-2. ✅ Update dependencies to latest versions
-3. ✅ Run existing security tests
-4. ✅ Review recent security advisories for dependencies
-
-### During Review
-1. ✅ Focus on high/critical findings first
-2. ✅ Verify findings manually before applying fixes
-3. ✅ Test fixes in development environment
-4. ✅ Document security decisions
-
-### After Review
-1. ✅ Run tests after applying fixes
-2. ✅ Update security documentation
-3. ✅ Schedule follow-up reviews
-4. ✅ Share findings with team
-
-### Security Review Checklist
-- [ ] All critical issues resolved
-- [ ] High severity issues addressed or documented
-- [ ] Secrets rotated if exposed
-- [ ] Security tests added for fixed vulnerabilities
-- [ ] Team notified of security changes
-- [ ] Security documentation updated
-
----
-
-## Integration with CI/CD
-
-### Pre-commit Hook
-
-```bash
-#!/bin/bash
-# .git/hooks/pre-commit
-
-echo "Running security review on staged changes..."
-INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD")
-SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-printf '%s' "$SECURITY_PROMPT" > "$SESSION_DIR/prompt.txt"
-START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort low)
-
-# Poll until complete
-while true; do
-  POLL=$(node "$RUNNER" poll "$SESSION_DIR")
-  case "$POLL" in POLL:running:*) sleep 15;; *) break;; esac
-done
-
-if grep -q "VERDICT: REVISE" "$SESSION_DIR/review.md" 2>/dev/null; then
-  echo "❌ Security issues found. Commit blocked."
-  echo "Run 'codex-security-review' for details."
-  exit 1
-fi
-
-echo "✅ Security check passed"
-exit 0
-```
-
-### GitHub Actions
-
-```yaml
-name: Security Review
-on: [pull_request]
-
-jobs:
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install Codex CLI
-        run: npm install -g @openai/codex
-      - name: Run Security Review
-        run: |
-          INIT_OUTPUT=$(node codex-runner.js init --skill-name codex-security-review --working-dir .)
-          SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-          printf '%s' "$SECURITY_PROMPT" > "$SESSION_DIR/prompt.txt"
-          node codex-runner.js start "$SESSION_DIR" --effort high
-          while true; do
-            POLL=$(node codex-runner.js poll "$SESSION_DIR")
-            case "$POLL" in POLL:running:*) sleep 15;; *) break;; esac
-          done
-          cat "$SESSION_DIR/review.md" >> $GITHUB_STEP_SUMMARY
-```
-
----
-
-**End of Workflow Documentation**
+### General Rules
+- Always run cleanup (step 9) regardless of error.
+- Use `review.raw_markdown` as fallback if structured parsing misses edge cases.

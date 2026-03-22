@@ -6,29 +6,43 @@
 - Relevant files or external facts.
 - Reasoning effort level.
 
-## 1.8) Prompt Assembly
-
-1. Read the Round 1 template from `references/prompts.md`.
-2. Replace `{QUESTION}` with user's question or topic.
-3. Replace `{PROJECT_CONTEXT}` with project description (or "Not specified — infer from codebase").
-4. Replace `{RELEVANT_FILES}` with file list (or "None specified").
-5. Replace `{CONSTRAINTS}` with scope constraints (or "None specified").
-6. Replace `{OUTPUT_FORMAT}` by copying the entire fenced code block from `references/output-format.md`.
-
 ## 2) Start Round 1
 
-Set `ROUND=1`.
+### 2a) Initialize Session
 
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-think-about --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
 ```
 
-Write the assembled prompt to `$SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+**Validate init output:** Verify `INIT_OUTPUT` starts with `CODEX_SESSION:`. If not, report error.
+
+### 2b) Render Prompt
+
+Compute `SKILLS_DIR` from the runner path — it is the grandparent directory of the runner script (e.g., `~/.claude/skills`):
 
 ```bash
-START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT" --sandbox danger-full-access)
+SKILLS_DIR="$(dirname "$(dirname "$RUNNER")")"
 ```
+
+```bash
+PROMPT=$(echo '{"QUESTION":"...","PROJECT_CONTEXT":"...","RELEVANT_FILES":"...","CONSTRAINTS":"..."}' | \
+  node "$RUNNER" render --skill codex-think-about --template round1 --skills-dir "$SKILLS_DIR")
+```
+
+`{OUTPUT_FORMAT}` is auto-injected by the render command from `references/output-format.md`.
+
+### 2c) Start Codex
+
+```bash
+echo "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT" --sandbox danger-full-access
+```
+
+**Validate start output (JSON):**
+```json
+{ "status": "started", "session_dir": "/path", "round": 1 }
+```
+If `status` is `"error"`, report to user.
 
 **Do NOT poll yet.** Proceed immediately to Step 2.5.
 
@@ -36,18 +50,22 @@ START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT" --sandbox 
 
 **PURPOSE**: Form Claude's own position BEFORE seeing Codex's output. Prevents anchoring bias.
 
-**INFORMATION BARRIER**: MUST NOT read `$SESSION_DIR/review.md`. Codex đang chạy background — để nó làm việc trong khi bạn suy nghĩ.
+**INFORMATION BARRIER**: MUST NOT read Codex output from poll JSON `review` field. Codex is running in background — let it work while you think.
 
-**TIMING**: Giữa Start Codex (Step 2) và Poll (Step 3). Codex Round 1 thường mất 90-180s, Claude có đủ thời gian.
+**TIMING**: Between Start Codex (Step 2) and Poll (Step 3). Codex Round 1 typically takes 90-180s, Claude has enough time.
 
 ### Instructions
 
-1. Read the Claude Independent Analysis Prompt from `references/prompts.md`.
-2. Replace placeholders (same values as Round 1 prompt): `{QUESTION}`, `{PROJECT_CONTEXT}`, `{RELEVANT_FILES}`, `{CONSTRAINTS}`.
-3. Replace `{CLAUDE_ANALYSIS_FORMAT}` by copying the entire fenced code block from `references/claude-analysis-template.md`.
-4. Analyze using own knowledge. MAY use MCP tools (web_search, context7, ask_internet) for research — source parity with Codex's web access.
-5. Write analysis in format from `references/claude-analysis-template.md`.
-6. **CRITICAL**: Analysis must be COMPLETE and FINAL before proceeding to Step 3. Commit to specific positions.
+1. Render Claude analysis prompt:
+```bash
+CLAUDE_PROMPT=$(echo '{"QUESTION":"...","PROJECT_CONTEXT":"...","RELEVANT_FILES":"...","CONSTRAINTS":"..."}' | \
+  node "$RUNNER" render --skill codex-think-about --template claude-analysis --skills-dir "$SKILLS_DIR")
+```
+`{CLAUDE_ANALYSIS_FORMAT}` is auto-injected by the render command from `references/claude-analysis-template.md`.
+
+2. Analyze using own knowledge. MAY use MCP tools (web_search, context7, ask_internet) for research — source parity with Codex's web access.
+3. Write analysis following the rendered format.
+4. **CRITICAL**: Analysis must be COMPLETE and FINAL before proceeding to Step 3. Commit to specific positions.
 
 ### After Completing Analysis
 
@@ -55,10 +73,10 @@ Store analysis internally (needed for Step 4 cross-analysis). Proceed to Step 3 
 
 ## 3) Poll
 
-**BARRIER REMINDER**: Independent analysis đã hoàn tất ở Step 2.5. Khi polling, report Codex's *activities* nhưng KHÔNG interpret conclusions. Analysis đã locked.
+**BARRIER REMINDER**: Independent analysis is complete from Step 2.5. When polling, report Codex's *activities* but do NOT interpret conclusions. Analysis is locked.
 
 ```bash
-POLL_OUTPUT=$(node "$RUNNER" poll "$SESSION_DIR")
+POLL_JSON=$(node "$RUNNER" poll "$SESSION_DIR")
 ```
 
 Adaptive intervals — start slow, speed up (longer than other skills due to web requests):
@@ -74,63 +92,109 @@ Adaptive intervals — start slow, speed up (longer than other skills due to web
 - Poll 2: wait 30s
 - Poll 3+: wait 15s
 
-After each poll, report **specific activities** to the user by parsing stderr lines. Stderr contains timestamped progress events like `[Ns] Codex thinking: ...`, `[Ns] Codex running: ...`, `[Ns] Codex completed: ...`. Use these to build a specific, informative status update.
+**Parse JSON output:**
 
-**Poll stdout format:**
-- Line 1: `POLL:{status}:{elapsed}[:{exit_code}:{details}]`
-- Line 2 (if completed): `THREAD_ID:{id}`
+Running:
+```json
+{
+  "status": "running",
+  "round": 1,
+  "elapsed_seconds": 45,
+  "activities": [
+    { "time": 30, "type": "thinking", "detail": "researching WebSocket vs SSE tradeoffs" },
+    { "time": 35, "type": "command_started", "detail": "curl -sS https://docs.example.com" }
+  ]
+}
+```
 
-**Poll stderr format (progress events):**
-- `[{elapsed}s] Codex is thinking...` — Codex started a new turn
-- `[{elapsed}s] Codex thinking: {reasoning text}` — Codex reasoning about something
-- `[{elapsed}s] Codex running: {command}` — Codex executing a command
-- `[{elapsed}s] Codex completed: {command}` — Codex finished a command
-- `[{elapsed}s] Codex changed: {path} ({kind})` — Codex modified a file (see Step 4.5 warning)
-
-**Report template:** Parse the stderr lines and report what Codex is actually doing. Example: `"Codex [90s]: researching WebSocket vs SSE tradeoffs, reading docs"`
+Report **specific activities** from the `activities` array. Example: `"Codex [90s]: researching WebSocket vs SSE tradeoffs, reading docs"`. NEVER say generic messages like "Codex is running" or "still waiting" — always extract concrete details from activities.
 
 **WARNING notes:**
-- `Codex changed: <path> (<kind>)` → **WARNING: Codex modified file `<path>`** — see Step 4.5
+- `type: "file_changed"` in activities → **WARNING: Codex modified file** — see Step 4.5
 - `wget` detected in activities → **WARNING: wget detected** — may write files, monitor Step 4.5
 
-Continue while status is `running`.
-Stop on `completed|failed|timeout|stalled`.
+Continue while `status` is `"running"`.
+Stop on `"completed"|"failed"|"timeout"|"stalled"`.
 
-**On `POLL:completed`:**
-1. Read Codex output: `cat "$SESSION_DIR/review.md"`.
+**Completed:**
+```json
+{
+  "status": "completed",
+  "round": 1,
+  "elapsed_seconds": 120,
+  "thread_id": "thread_abc",
+  "review": {
+    "format": "think-about",
+    "insights": [
+      { "text": "WebSocket provides true bidirectional...", "source": "https://..." }
+    ],
+    "considerations": [
+      { "text": "SSE has better browser reconnection...", "source": "analysis" }
+    ],
+    "recommendations": [
+      "Use WebSocket for real-time collaborative features"
+    ],
+    "sources": [
+      { "num": 1, "url": "https://...", "description": "Official docs for X" }
+    ],
+    "open_questions": ["..."],
+    "confidence": "medium",
+    "suggested_status": "CONTINUE",
+    "raw_markdown": "..."
+  },
+  "activities": [...]
+}
+```
+
+**Failed/Timeout/Stalled:**
+```json
+{
+  "status": "failed|timeout|stalled",
+  "round": 1,
+  "elapsed_seconds": 3600,
+  "exit_code": 2,
+  "error": "Timeout after 3600s",
+  "review": null,
+  "activities": [...]
+}
+```
 
 ## 4) Cross-Analysis (Claude's Independent View vs Codex's Output)
 
-After `POLL:completed`:
+After poll returns `"completed"`:
 
 ### 4a) Read Codex Output
-1. Read from `$SESSION_DIR/review.md`.
-2. Parse Key Insights, Considerations, Recommendations, Sources, Open Questions, Confidence Level, Suggested Status.
+Parse from poll JSON `review` field:
+- `review.insights` — array of insights with text and source
+- `review.considerations` — array of considerations
+- `review.recommendations` — array of recommendations
+- `review.sources` — array of sources with URLs
+- `review.open_questions` — array of open questions
+- `review.confidence` — confidence level
+- `review.suggested_status` — CONTINUE/CONSENSUS/STALEMATE
+- `review.raw_markdown` — always available as fallback
 
 ### 4b) Compare Positions (Side-by-Side)
 
-Classify mỗi topic/insight:
+Classify each topic/insight:
 
 | Classification | Meaning | Handle |
 |---------------|---------|--------|
-| **Genuine Agreement** | Cả hai independently đi đến cùng kết luận | Strong consensus signal |
-| **Genuine Disagreement** | Có opposing positions từ trước | Real debate point — defend with evidence |
-| **Claude-only Insight** | Claude thấy mà Codex không | Present as new perspective |
-| **Codex-only Insight** | Codex tìm được mà Claude không | Evaluate on merits — accept hoặc challenge |
-| **Same Direction, Different Depth** | Cả hai thấy issue nhưng one went deeper | Synthesize deeper analysis |
+| **Genuine Agreement** | Both independently reached same conclusion | Strong consensus signal |
+| **Genuine Disagreement** | Have opposing positions from the start | Real debate point — defend with evidence |
+| **Claude-only Insight** | Claude found but Codex did not | Present as new perspective |
+| **Codex-only Insight** | Codex found but Claude did not | Evaluate on merits — accept or challenge |
+| **Same Direction, Different Depth** | Both found issue but one went deeper | Synthesize deeper analysis |
 
 ### 4c) Build Response
 
-1. **Agreements**: Points cả hai independently converged. Strong signals vì không ai influence ai.
-2. **Disagreements**: Genuine disagreements. State Claude's independent position + why Codex's position doesn't change it (hoặc does — be honest).
+1. **Agreements**: Points both independently converged. Strong signals since neither influenced the other.
+2. **Disagreements**: Genuine disagreements. State Claude's independent position + why Codex's position doesn't change it (or does — be honest).
 3. **New Perspectives**: Claude-only insights + evaluate Codex-only insights on merits.
 4. **Source Cross-validation**: Compare sources. Flag claims lacking citations.
-5. Set status: `CONTINUE`, `CONSENSUS`, or `STALEMATE`. Consider Codex's Suggested Status but override if evidence warrants a different assessment.
+5. Set status: `CONTINUE`, `CONSENSUS`, or `STALEMATE`. Consider Codex's `review.suggested_status` but override if evidence warrants a different assessment.
 
-After parsing each round's analysis, append round summary to `$SESSION_DIR/rounds.json`:
-- Read existing rounds.json or start with empty array `[]`
-- Append: `{ "round": N, "elapsed_seconds": ..., "verdict": "...", "insights_count": ..., "agreed": ..., "disagreed": ... }`
-- Write back to `$SESSION_DIR/rounds.json`
+> **Note:** Round tracking is automatic. The runner manages `rounds.json` — do NOT read or write it manually.
 
 ## 4.5) File Modification Guard
 
@@ -197,27 +261,34 @@ Clean up: `rm -rf "$FS_GUARD_DIR"` after round.
 
 ## 5) Resume Round 2+
 
-**Note**: Từ Round 2 trở đi, information barrier không còn áp dụng — cả hai đã thấy positions của nhau. Debate tiếp tục bình thường.
+**Note**: From Round 2 onward, the information barrier no longer applies — both sides have seen each other's positions. Debate continues normally.
 
-Build Round 2+ prompt from `references/prompts.md` (Response Prompt template):
-- Replace `{AGREED_POINTS}` with Claude's agreements from step 4.
-- Replace `{DISAGREED_POINTS}` with Claude's rebuttals from step 4.
-- Replace `{NEW_PERSPECTIVES}` with new angles from step 4.
-- Replace `{CONTINUE_OR_CONSENSUS_OR_STALEMATE}` with status from step 4.
-- Replace `{OUTPUT_FORMAT}` by copying the entire fenced code block from `references/output-format.md`.
+### 5a) Render Round 2+ Prompt
+
+```bash
+PROMPT=$(echo '{"AGREED_POINTS":"...","DISAGREED_POINTS":"...","NEW_PERSPECTIVES":"...","CONTINUE_OR_CONSENSUS_OR_STALEMATE":"..."}' | \
+  node "$RUNNER" render --skill codex-think-about --template round2+ --skills-dir "$SKILLS_DIR")
+```
+
+`{OUTPUT_FORMAT}` is auto-injected by the render command from `references/output-format.md`.
 
 **Note:** Sandbox mode (`danger-full-access`) persists automatically via the Codex thread. Do NOT pass `--sandbox` on resume — it is inherited from the original thread.
 
-Write the response prompt to `$SESSION_DIR/prompt.txt` (overwrites previous round's prompt).
+### 5b) Resume Codex
 
 ```bash
-START_OUTPUT=$(node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
+echo "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"
 ```
 
-**→ Go back to step 3 (Poll).** Increment `ROUND` counter. After poll completes, repeat step 4 and check stop conditions. If `ROUND >= 5`, force final synthesis — do NOT resume. Otherwise, continue until a stop condition is reached.
+**Validate resume output (JSON):**
+```json
+{ "status": "started", "session_dir": "/path", "round": 2, "thread_id": "thread_abc" }
+```
+
+Then **go back to step 3 (Poll).** After poll completes, repeat step 4 (Cross-Analysis) and check completion criteria below. If not met, resume again (step 5). Continue this loop until a completion criterion is reached.
 
 ## 6) Stop Conditions
-- Consensus reached.
+- Consensus reached (`review.suggested_status === "CONSENSUS"`).
 - Stalemate detected (repeated claims with no new evidence for two rounds).
 - Hard cap reached (5 rounds maximum).
 
@@ -249,28 +320,25 @@ START_OUTPUT=$(node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
 ### Confidence Level
 - low | medium | high
 
-## 7.5) Session Finalization
+## 8) Session Finalization
 
-After the final synthesis is complete, write session metadata:
+After the final synthesis is complete, finalize the session:
 
 ```bash
-cat > "$SESSION_DIR/meta.json" << METAEOF
-{
-  "skill": "codex-think-about",
-  "version": 15,
-  "effort": "$EFFORT",
-  "rounds": ${ROUND_COUNT:-0},
-  "verdict": "$FINAL_VERDICT",
-  "timing": { "total_seconds": ${ELAPSED_SECONDS:-0} },
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-METAEOF
-echo "Session saved to: $SESSION_DIR"
+echo '{"verdict":"CONSENSUS","scope":"think-about"}' | node "$RUNNER" finalize "$SESSION_DIR"
 ```
+
+Optionally include debate tracking:
+```bash
+echo '{"verdict":"CONSENSUS","scope":"think-about","insights":{"total_agreed":5,"total_disagreed":2,"total_open":1}}' | \
+  node "$RUNNER" finalize "$SESSION_DIR"
+```
+
+The runner auto-computes `meta.json` with timing, round count, and session metadata.
 
 Report `$SESSION_DIR` path to the user in the final summary.
 
-## 8) Cleanup
+## 9) Cleanup
 ```bash
 node "$RUNNER" stop "$SESSION_DIR"
 ```
@@ -278,22 +346,21 @@ Always run this step, even if the debate ended due to failure or timeout.
 
 ## Error Handling
 
-Runner `poll` returns status via output string `POLL:<status>:<elapsed>[:exit_code:details]`. Normally exits 0, but may exit non-zero when session dir is invalid or I/O error — handle both cases:
+### Poll Errors
+Poll returns JSON. Parse `status` field:
+- `"completed"` → success, review data in `review` field.
+- `"failed"` (exit_code 3) → turn failed. Retry once. If still failing, report error to user.
+- `"timeout"` (exit_code 2) → timeout. Report partial results from `review.raw_markdown` if available. Suggest retry with lower effort.
+- `"stalled"` (exit_code 4) → stalled. Report partial results. Suggest lower effort.
+- `"error"` → infrastructure error. Report `error` field to user.
 
-**Parse POLL string (exit 0):**
-- `POLL:completed:...` → Success, read review.md from session dir.
-- `POLL:failed:...:3:...` → Turn failed. Retry once. If still fails, report error.
-- `POLL:timeout:...:2:...` → Timeout. Report partial results if review.md exists. Suggest retry with lower effort.
-- `POLL:stalled:...:4:...` → Stalled. Report partial results. Suggest lower effort.
+### Start/Resume Errors
+Start and resume return JSON. If `status` is `"error"`:
+- Check `code` field: `"CODEX_NOT_FOUND"` → tell user to install codex. Other codes → report `error` message.
 
-**Fallback when poll exits non-zero or output cannot be parsed:**
-- Log error output, report infrastructure error to user, suggest retry.
-
-Runner `start` may fail with exit code:
-- 1 → Generic error (invalid args, I/O). Report error message.
-- 5 → Codex CLI not found. Tell user to install.
-
-Always run cleanup (step 8) regardless of error.
+### General Rules
+- Always run cleanup (step 9) regardless of error.
+- Use `review.raw_markdown` as fallback if structured parsing misses edge cases.
 
 ## Stalemate Handling
 
@@ -301,4 +368,4 @@ When stalemate detected (repeated claims with no new evidence for two rounds):
 1. List specific deadlocked points.
 2. Show each side's final argument for each point.
 3. Recommend which perspective user should favor.
-4. If `ROUND < 5`, ask user: accept current synthesis or force one more round. If `ROUND >= 5` (hard cap), force final synthesis — do NOT offer another round.
+4. If current round < 5, ask user: accept current synthesis or force one more round. If current round >= 5 (hard cap), force final synthesis — do NOT offer another round.

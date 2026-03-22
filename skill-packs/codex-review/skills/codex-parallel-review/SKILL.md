@@ -12,7 +12,8 @@ description: Parallel independent review by both Claude (4 agents) and Codex, fo
 When you want independent dual-reviewer analysis. Produces higher-confidence findings than single-reviewer skills because findings are cross-validated between Claude agents and Codex before being reported.
 
 ## Prerequisites
-- **Working-tree mode** (default): working tree has staged or unstaged changes.
+- **Full-codebase mode** (default): repository has source files to review.
+- **Working-tree mode**: working tree has staged or unstaged changes.
 - **Branch mode**: current branch differs from base branch.
 - **No external plugins required** — Agent tool is built into Claude Code.
 
@@ -20,6 +21,7 @@ When you want independent dual-reviewer analysis. Produces higher-confidence fin
 
 ```bash
 RUNNER="{{RUNNER_PATH}}"
+SKILLS_DIR="{{SKILLS_DIR}}"
 ```
 
 ## Workflow
@@ -28,18 +30,17 @@ RUNNER="{{RUNNER_PATH}}"
    - Announce: "Detected: effort=`$EFFORT` (N files changed). Proceeding — reply to override effort. Review mode: `full-codebase` (default) / `working-tree` / `branch`."
    - Set `EFFORT`. Ask `MODE` only if user doesn't confirm default.
 2. **Launch all 5 reviewers in ONE message** (true parallelism):
-   - Start Codex via runner (background subprocess): `node "$RUNNER" init --skill-name codex-parallel-review --working-dir "$PWD"` then `node "$RUNNER" start "$SESSION_DIR"`.
-   - Spawn 4 `code-reviewer` agents via Agent tool with `run_in_background: true`:
-     - Agent 1: correctness + edge cases
-     - Agent 2: security (DEEP — OWASP Top 10, secrets, crypto, deps, auth flow)
-     - Agent 3: performance
-     - Agent 4: maintainability + architecture
-   - See `references/workflow.md` Step 2 for exact Agent tool JSON.
-3. **Poll Codex + collect agent results**: adaptive intervals while all 5 work.
-4. **Merge**: deduplicate Claude agents' findings, cross-match vs Codex. Categorize: agreed / claude-only / codex-only / contradictions.
-5. **Apply + Debate**: fix agreed issues. Debate disagreements via Codex thread resume. Max `MAX_ROUNDS` rounds.
-6. **Final Report**: consensus, resolved, unresolved, risk assessment.
-7. **Cleanup**: always `node "$RUNNER" stop "$SESSION_DIR"`.
+   - Init session: `INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-parallel-review --working-dir "$PWD")`, extract `SESSION_DIR`.
+   - Render Codex prompt: `echo '{"USER_REQUEST":"...","SESSION_CONTEXT":"..."}' | node "$RUNNER" render --skill codex-parallel-review --template <template> --skills-dir "$SKILLS_DIR"` (template = `full-round1`, `working-tree-round1`, or `branch-round1`; branch-round1 also needs `"BASE_BRANCH":"main"` in JSON).
+   - Start Codex: `echo "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"` — validates JSON output `{ "status": "started" }`.
+   - Spawn 4 `code-reviewer` agents via Agent tool with `run_in_background: true` (see `references/workflow.md` Step 2b for exact Agent tool JSON).
+3. **Poll Codex + collect agent results**: `node "$RUNNER" poll "$SESSION_DIR"` — returns JSON with `status`, `review.blocks`, `review.verdict`, and `activities`. Report **specific activities** from the activities array. NEVER report generic "Codex is running". Collect agent results as they finish.
+4. **Merge**: deduplicate Claude agents' findings, cross-match vs Codex. Codex issues from `poll_json.review.blocks[]`. Categorize: agreed / claude-only / codex-only / contradictions.
+5. **Apply agreed issues**: fix agreed issues in code.
+6. **Render debate prompt**: `echo '{"CODEX_ONLY_WITH_REBUTTALS":"...","CLAUDE_ONLY_FINDINGS":"...","CONTRADICTIONS":"..."}' | node "$RUNNER" render --skill codex-parallel-review --template debate --skills-dir "$SKILLS_DIR"`.
+7. **Resume**: `echo "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"` → validate JSON. **Go back to step 3 (Poll).** Repeat steps 3→4→5→6→7 until resolved, stalemate, or `MAX_ROUNDS` (default 3).
+8. **Final Report + Finalize**: consensus report with review stats. Finalize: `echo '{"verdict":"...","scope":"..."}' | node "$RUNNER" finalize "$SESSION_DIR"`.
+9. **Cleanup**: `node "$RUNNER" stop "$SESSION_DIR"` — returns JSON. Always run regardless of outcome.
 
 ### Effort Level Guide
 | Level    | Depth             | Best for                        | Typical time |
@@ -61,3 +62,4 @@ RUNNER="{{RUNNER_PATH}}"
 - Max debate rounds enforced (default 3); user can override.
 - On stalemate, present both sides and defer to user.
 - If agents or Codex fail, degrade gracefully (see workflow.md Error Handling).
+- **Runner manages all session state** — do NOT manually read/write `rounds.json`, `meta.json`, or `prompt.txt` in the session directory.

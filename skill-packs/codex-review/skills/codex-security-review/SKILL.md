@@ -19,21 +19,29 @@ When changes touch auth, crypto, SQL queries, user input processing, file upload
 
 ```bash
 RUNNER="{{RUNNER_PATH}}"
+SKILLS_DIR="{{SKILLS_DIR}}"
 ```
 
 ## Workflow
 1. **Collect inputs**: Auto-detect context and announce defaults before asking anything.
-   - **scope** (detected first): Run `git status --short | grep -v '^??'` — non-empty output → `working-tree`. Else run `git rev-list @{u}..HEAD` — non-empty → `branch`. If both conditions true, use `working-tree`. If neither, ask user.
-   - **effort** (adapts to detected scope): If scope=`branch`, count `git diff --name-only @{u}..HEAD`; else count `git diff --name-only`. Result <10 → `medium`, 10–50 → `high`, >50 → `xhigh`; default `high` if undetectable.
+   - **scope** (detected first): Run `git status --short | grep -v '^??'` — non-empty output → `working-tree`. Else run `git rev-list @{u}..HEAD` — non-empty → `branch`. If both conditions true, use `working-tree`. If neither, ask user (offer `full` as option).
+   - **effort** (adapts to detected scope): If scope=`branch`, count `git diff --name-only @{u}..HEAD`; else count `git diff --name-only`. Result <10 → `medium`, 10–50 → `high`, >50 → `xhigh`; default `high` if undetectable. For scope=`full`, default `high`.
    - Announce: "Detected: scope=`$SCOPE`, effort=`$EFFORT` (N files changed). Proceeding — reply to override scope, effort, or both."
    - Set `SCOPE` and `EFFORT`. Only block for inputs that remain undetectable.
-2. Build prompt from `references/prompts.md` (Security Review Prompt with OWASP checklist).
-3. Start round 1: `node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD"` to create session, then `node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"`.
-4. Poll with adaptive intervals (Round 1: 60s/60s/30s/15s..., Round 2+: 30s/15s...). After each poll, report **specific activities** from poll output (e.g. which files Codex is analyzing, what vulnerability patterns it's checking). See `references/workflow.md` for parsing guide. NEVER report generic "Codex is running" — always extract concrete details.
-5. Parse security findings with `references/output-format.md` (includes CWE/OWASP mappings).
-6. Fix valid vulnerabilities in code; rebut false positives with evidence.
-7. Resume debate via `node "$RUNNER" resume "$SESSION_DIR"` until `APPROVE` or stalemate.
-8. Return final security assessment with risk summary.
+2. Run pre-flight checks (see `references/workflow.md` §1.5).
+3. Render prompt: First render scope-specific template to get scope instructions, then render round1 with that value:
+   ```bash
+   SCOPE_INSTRUCTIONS=$(echo '{"BASE_BRANCH":"..."}' | node "$RUNNER" render --skill codex-security-review --template "$SCOPE" --skills-dir "$SKILLS_DIR")
+   PROMPT=$(echo '{"WORKING_DIR":"...","SCOPE":"...","EFFORT":"...","BASE_BRANCH":"...","SCOPE_SPECIFIC_INSTRUCTIONS":"'"$SCOPE_INSTRUCTIONS"'"}' | node "$RUNNER" render --skill codex-security-review --template round1 --skills-dir "$SKILLS_DIR")
+   ```
+4. Start round 1: `node "$RUNNER" init` → pipe rendered prompt to `node "$RUNNER" start "$SESSION_DIR"`.
+5. Poll: `node "$RUNNER" poll "$SESSION_DIR"` — returns JSON with `status`, `review.blocks`, `review.verdict`, and `activities`. Report **specific activities** from the activities array (e.g. which files Codex is scanning, what vulnerability patterns it's checking). NEVER report generic "Codex is running" — always extract concrete details.
+6. Parse `review.blocks` from poll JSON — each block has `id`, `prefix`, `title`, `category`, `severity`, `confidence`, `cwe`, `owasp`, `problem`, `evidence`, `attack_vector`, `suggested_fix`. The verdict includes `risk_summary` with severity counts. Use `review.raw_markdown` as fallback.
+7. Fix valid vulnerabilities in code; rebut false positives with evidence.
+8. **Render rebuttal**: `echo '{"FIXED_ITEMS":"...","DISPUTED_ITEMS":"...","SESSION_CONTEXT":"..."}' | node "$RUNNER" render --skill codex-security-review --template round2+ --skills-dir "$SKILLS_DIR"`.
+9. **Resume**: `echo "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"` → validate JSON. **Go back to step 5 (Poll).** Repeat steps 5→6→7→8→9 until `review.verdict.status === "APPROVE"`, stalemate, or hard cap (5 rounds).
+10. **Finalize**: `echo '{"verdict":"...","scope":"..."}' | node "$RUNNER" finalize "$SESSION_DIR"`.
+11. **Cleanup**: `node "$RUNNER" stop "$SESSION_DIR"`. Return final security assessment with risk summary and recommended next steps.
 
 ### Effort Level Guide
 | Level    | Depth             | Best for                        | Typical time |
@@ -56,9 +64,12 @@ RUNNER="{{RUNNER_PATH}}"
 - Output contract (incl. Security Categories, Output Format, OWASP coverage): `references/output-format.md`
 
 ## Rules
-- Codex reviews only; it does not edit files
-- Mark all findings with confidence level (high/medium/low)
-- Provide CWE and OWASP mappings for all vulnerabilities
-- Include attack vector explanation for each finding
-- If stalemate persists, present both sides and defer to user
-- Never claim 100% security coverage - static analysis has limits
+- If invoked during Claude Code plan mode, exit plan mode first — this skill requires code editing.
+- Codex reviews only; it does not edit files.
+- Mark all findings with confidence level (high/medium/low).
+- Provide CWE and OWASP mappings for all vulnerabilities.
+- Include attack vector explanation for each finding.
+- Every accepted issue must map to a concrete code diff.
+- If stalemate persists, present both sides and defer to user.
+- Never claim 100% security coverage — static analysis has limits.
+- **Runner manages all session state** — do NOT manually read/write `rounds.json`, `meta.json`, or `prompt.txt` in the session directory.

@@ -133,34 +133,70 @@ For `low` effort: skip confirmation, auto-proceed.
 
 ## 4) Review Loop
 
+### Setup
+
+Compute `SKILLS_DIR` from the runner path:
+
+```bash
+SKILLS_DIR="$(dirname "$(dirname "$RUNNER")")"
+```
+
+This resolves to the directory containing all installed skill directories (e.g., `~/.claude/skills`).
+
+Initialize an array to track all session directories for cleanup:
+
+```bash
+ALL_SESSION_DIRS=()
+```
+
 ### Sequential Mode (parallel_factor=1)
 
 For each chunk in order:
 
-#### 4a) Build Prompt
-Use `references/prompts.md` → Chunk Review Prompt template.
-Include:
-- Module name + file list (paths only — Codex reads files).
-- Project type + focus areas.
-- Context summary from prior chunks (high/critical findings only, ~2000 token cap).
+#### 4a) Initialize Session
 
-#### 4b) Start Codex
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-codebase-review --working-dir "$PWD")
 CHUNK_SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
 ```
 
-Write the assembled chunk prompt to `$CHUNK_SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+**Validate init output:** Verify `INIT_OUTPUT` starts with `CODEX_SESSION:`. If not, report error.
 
+Track CHUNK_SESSION_DIR:
 ```bash
-START_OUTPUT=$(node "$RUNNER" start "$CHUNK_SESSION_DIR" --effort "$EFFORT")
+ALL_SESSION_DIRS+=("$CHUNK_SESSION_DIR")
 ```
 
-Track CHUNK_SESSION_DIR in a list for cleanup.
+#### 4b) Render Prompt
 
-#### 4c) Poll
 ```bash
-POLL_OUTPUT=$(node "$RUNNER" poll "$CHUNK_SESSION_DIR")
+PROMPT=$(echo '{"PROJECT_TYPE":"...","CHUNK_NAME":"...","FOCUS_AREAS":"...","FILE_LIST":"...","CONTEXT_SUMMARY":"..."}' | \
+  node "$RUNNER" render --skill codex-codebase-review --template chunk-review --skills-dir "$SKILLS_DIR")
+```
+
+Template variables:
+- `PROJECT_TYPE`: detected project type from §2a
+- `CHUNK_NAME`: name of this chunk (e.g., "auth", "api-routes")
+- `FOCUS_AREAS`: comma-separated focus areas or "all"
+- `FILE_LIST`: newline-separated list of files in this chunk
+- `CONTEXT_SUMMARY`: high/critical findings from prior chunks (empty for first chunk)
+
+#### 4c) Start Codex
+
+```bash
+echo "$PROMPT" | node "$RUNNER" start "$CHUNK_SESSION_DIR" --effort "$EFFORT"
+```
+
+**Validate start output (JSON):**
+```json
+{ "status": "started", "session_dir": "/path", "round": 1 }
+```
+If `status` is `"error"`, report to user.
+
+#### 4d) Poll
+
+```bash
+POLL_JSON=$(node "$RUNNER" poll "$CHUNK_SESSION_DIR")
 ```
 
 Adaptive intervals:
@@ -169,30 +205,115 @@ Adaptive intervals:
 - Poll 3: wait 30s
 - Poll 4+: wait 15s
 
-After each poll, report using stderr lines which contain timestamped progress events like `[Ns] Codex thinking: ...`, `[Ns] Codex running: ...`, `[Ns] Codex completed: ...`.
-**Report template:** `"Chunk {N}/{TOTAL} [{name}] — Codex [{elapsed}s]: {activity from stderr}"`
+**Parse JSON output:**
 
-Continue while `POLL:running`. Stop on `completed|failed|timeout|stalled`.
+Running:
+```json
+{
+  "status": "running",
+  "round": 1,
+  "elapsed_seconds": 45,
+  "activities": [
+    { "time": 30, "type": "thinking", "detail": "analyzing auth flow" },
+    { "time": 35, "type": "command_started", "detail": "cat src/auth.js" }
+  ]
+}
+```
 
-#### 4d) Parse Results
-Parse `ISSUE-{N}` blocks from review output. See `references/output-format.md`.
+Report **specific activities** from the `activities` array. Example: `"Chunk {N}/{TOTAL} [{name}] — Codex [{elapsed}s]: reading src/auth.js, analyzing auth flow"`. NEVER say generic messages like "Codex is running" or "still waiting" — always extract concrete details from activities.
 
-#### 4e) Context Propagation
+Continue while `status` is `"running"`.
+Stop on `"completed"|"failed"|"timeout"|"stalled"`.
+
+**Completed:**
+```json
+{
+  "status": "completed",
+  "round": 1,
+  "elapsed_seconds": 120,
+  "thread_id": "thread_abc",
+  "review": {
+    "format": "review",
+    "blocks": [
+      { "id": 1, "prefix": "ISSUE", "title": "Missing validation", "category": "security", "severity": "high", "location": "src/api.js:23", "problem": "...", "evidence": "...", "suggested_fix": "...", "extra": {} }
+    ],
+    "verdict": { "status": "REVISE", "reason": "..." },
+    "overall_assessment": null,
+    "raw_markdown": "..."
+  },
+  "activities": [...]
+}
+```
+
+**Failed/Timeout/Stalled:**
+```json
+{
+  "status": "failed|timeout|stalled",
+  "round": 1,
+  "elapsed_seconds": 3600,
+  "exit_code": 2,
+  "error": "Timeout after 3600s",
+  "review": null,
+  "activities": [...]
+}
+```
+
+#### 4e) Parse Results
+
+Parse issues from the poll JSON `review.blocks` array:
+- Each block has `id`, `prefix`, `title`, `category`, `severity`, `location`, `problem`, `evidence`, `suggested_fix`, and optionally `extra`.
+- The verdict is in `review.verdict.status` (e.g., `"REVISE"`, `"APPROVE"`).
+- `review.raw_markdown` is always available as fallback.
+
+#### 4f) Context Propagation
 After each chunk completes, extract high/critical findings into context summary:
 ```
 - [{chunk_name}] {title}: {summary} ({severity}) in {file}
 ```
 Cap at ~2000 tokens. Newest findings replace oldest if over cap.
 
-#### 4f) Report Progress
+#### 4g) Report Progress
 ```
 Chunk {N}/{TOTAL} [{name}]: {issue_count} issues ({C}C/{H}H/{M}M/{L}L)
 ```
 
-#### 4g) Cleanup Chunk
+#### 4h) Finalize Chunk
+
 ```bash
-node "$RUNNER" stop "$CHUNK_SESSION_DIR"
+echo '{"verdict":"...","scope":"codebase"}' | node "$RUNNER" finalize "$CHUNK_SESSION_DIR"
 ```
+
+**Validate finalize output (JSON):**
+```json
+{ "status": "finalized", "meta": { ... } }
+```
+
+#### 4i) Check Session Status (optional)
+
+At any point, inspect a session's state:
+
+```bash
+node "$RUNNER" status "$CHUNK_SESSION_DIR"
+```
+
+Returns:
+```json
+{
+  "status": "ok",
+  "session_id": "codex-codebase-review-20260322-001",
+  "skill": "codex-codebase-review",
+  "round": 1,
+  "effort": "high",
+  "thread_id": "thread_abc",
+  "rounds": [
+    { "round": 1, "started_at": 1711100000, "completed_at": 1711100120, "elapsed_seconds": 120, "status": "completed", "verdict": "REVISE", "issues_found": 3 }
+  ],
+  "has_review": true,
+  "has_meta": false
+}
+```
+
+Useful for debugging or when tracking multiple parallel sessions.
 
 ### Parallel Mode (parallel_factor=2-3)
 
@@ -201,18 +322,25 @@ Group chunks into batches of `parallel_factor` size.
 Example with 7 chunks, factor 2: [1,2], [3,4], [5,6], [7].
 
 #### Per Batch
-1. Start ALL chunks in batch simultaneously (multiple `node "$RUNNER" start` calls).
+1. Start ALL chunks in batch simultaneously (multiple init/render/start calls).
 2. Poll round-robin across all active CHUNK_SESSION_DIRs.
 3. Context propagation occurs BETWEEN batches only (not within a batch).
-4. After all chunks in batch complete → extract context → proceed to next batch.
+4. After all chunks in batch complete → extract context → finalize each → proceed to next batch.
 
 #### Polling Round-Robin
 ```
 while any_chunk_running:
   for each active CHUNK_SESSION_DIR:
-    poll once
+    poll once (JSON)
     if completed/failed → mark done, parse results
   sleep interval (same adaptive schedule)
+```
+
+#### Tracking Parallel Sessions
+
+Use `status` to inspect any session without interfering:
+```bash
+node "$RUNNER" status "$CHUNK_SESSION_DIR"
 ```
 
 ## 5) Cross-cutting Analysis (Claude-only)
@@ -245,35 +373,79 @@ After ALL chunks reviewed, Claude synthesizes findings.
 
 Only run when effort >= `high`.
 
-### 6a) Build Validation Prompt
-Use `references/prompts.md` → Validation Prompt template.
-Include CROSS-{N} findings for Codex to verify.
-
-### 6b) Start + Poll
-Standard start-poll-stop cycle. Same as chunk review.
+### 6a) Initialize Validation Session
 
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-codebase-review --working-dir "$PWD")
 VALIDATION_SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
 ```
 
-Write the validation prompt to `$VALIDATION_SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+**Validate init output:** Verify `INIT_OUTPUT` starts with `CODEX_SESSION:`. If not, report error.
 
+Track VALIDATION_SESSION_DIR:
 ```bash
-START_OUTPUT=$(node "$RUNNER" start "$VALIDATION_SESSION_DIR" --effort "$EFFORT")
+ALL_SESSION_DIRS+=("$VALIDATION_SESSION_DIR")
 ```
 
-Track VALIDATION_SESSION_DIR for cleanup.
+### 6b) Render Validation Prompt
 
-### 6c) Parse Responses
-Codex returns `RESPONSE-{N}` blocks:
-- `Action: accept` → keep CROSS-{N} finding as-is.
-- `Action: reject` → remove or downgrade.
-- `Action: revise` → update finding with Codex's revision.
+```bash
+PROMPT=$(echo '{"CROSS_FINDINGS":"..."}' | \
+  node "$RUNNER" render --skill codex-codebase-review --template validation --skills-dir "$SKILLS_DIR")
+```
 
-### 6d) Rounds
+### 6c) Start + Poll
+
+```bash
+echo "$PROMPT" | node "$RUNNER" start "$VALIDATION_SESSION_DIR" --effort "$EFFORT"
+```
+
+**Validate start output (JSON):**
+```json
+{ "status": "started", "session_dir": "/path", "round": 1 }
+```
+If `status` is `"error"`, report to user.
+
+Poll using same adaptive intervals and JSON parsing as chunk review (§4d).
+
+**Completed validation poll JSON:**
+```json
+{
+  "status": "completed",
+  "round": 1,
+  "elapsed_seconds": 180,
+  "thread_id": "thread_xyz",
+  "review": {
+    "format": "codebase-validation",
+    "blocks": [
+      { "id": 1, "prefix": "RESPONSE", "title": "Re: Inconsistent error handling", "action": "accept", "reason": "...", "extra": {} }
+    ],
+    "verdict": { "status": "APPROVE", "reason": "..." },
+    "overall_assessment": null,
+    "raw_markdown": "..."
+  },
+  "activities": [...]
+}
+```
+
+### 6d) Parse Responses
+
+Parse `review.blocks` from poll JSON — each block has `id`, `prefix` (`"RESPONSE"`), `title`, `action`, `reason`, and optionally `extra`:
+- `action: "accept"` → keep CROSS-{N} finding as-is.
+- `action: "reject"` → remove or downgrade.
+- `action: "revise"` → update finding with Codex's revision.
+
+Use `review.raw_markdown` as fallback if structured parsing misses edge cases.
+
+### 6e) Rounds
 - effort `high`: 1 validation round max.
 - effort `xhigh`: up to 2 validation rounds.
+
+### 6f) Finalize Validation
+
+```bash
+echo '{"verdict":"...","scope":"codebase"}' | node "$RUNNER" finalize "$VALIDATION_SESSION_DIR"
+```
 
 ## 7) Final Report
 
@@ -321,26 +493,16 @@ Create a master session directory to store the synthesized report:
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-codebase-review --working-dir "$PWD")
 MASTER_SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
-
-# Write synthesized report
-# (The final report markdown from §7 should be written to $MASTER_SESSION_DIR/review.md)
-
-cat > "$MASTER_SESSION_DIR/meta.json" << METAEOF
-{
-  "skill": "codex-codebase-review",
-  "version": 15,
-  "effort": "$EFFORT",
-  "chunks_total": ${TOTAL_CHUNKS:-0},
-  "chunks_completed": ${COMPLETED_CHUNKS:-0},
-  "total_issues": ${TOTAL_ISSUES:-0},
-  "cross_cutting_findings": ${CROSS_FINDINGS:-0},
-  "timing": { "total_seconds": ${ELAPSED_SECONDS:-0} },
-  "chunk_sessions": [${CHUNK_SESSION_LIST}],
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-METAEOF
-echo "Master session saved to: $MASTER_SESSION_DIR"
+ALL_SESSION_DIRS+=("$MASTER_SESSION_DIR")
 ```
+
+Finalize with aggregated stats:
+```bash
+echo '{"verdict":"...","scope":"codebase","issues":{"total_found":N,"total_fixed":0,"total_disputed":0}}' | \
+  node "$RUNNER" finalize "$MASTER_SESSION_DIR"
+```
+
+The runner auto-computes `meta.json` with timing, round count, and session metadata.
 
 Chunk sessions are preserved individually for traceability. Report `$MASTER_SESSION_DIR` path to the user.
 
@@ -352,14 +514,19 @@ for SESSION_DIR in "${ALL_SESSION_DIRS[@]}"; do
 done
 ```
 
-Stop ALL tracked session directories. Always run regardless of outcome (success, failure, timeout, partial).
+Each `stop` returns JSON:
+```json
+{ "status": "stopped", "session_dir": "/path" }
+```
+
+Stop ALL tracked session directories (chunk sessions, validation session, master session). Always run regardless of outcome (success, failure, timeout, partial).
 
 ## 9) Error Handling
 
 ### Chunk Failure
-- Runner returns `POLL:failed` → retry chunk 1 time.
+- Poll returns `status: "failed"` → retry chunk 1 time.
 - Still fails → skip chunk, note in report as "SKIPPED: {reason}".
-- If partial `review.md` exists → use partial results.
+- If partial `review.raw_markdown` exists → use partial results.
 
 ### Threshold: >50% Chunks Failed
 - Warn user: "More than half of chunks failed. Results may be incomplete."
@@ -382,14 +549,23 @@ Stop ALL tracked session directories. Always run regardless of outcome (success,
 | 4 | Stalled | Use partial results |
 | 5 | Codex not found | Fail immediately, tell user to install |
 
-### Poll Status Handling
-Parse `POLL:<status>:<elapsed>[:exit_code:details]`:
-- `POLL:completed:...` → success, read `review.md`.
-- `POLL:failed:...:3:...` → turn failed. Retry once.
-- `POLL:timeout:...:2:...` → timeout. Use partial results if available.
-- `POLL:stalled:...:4:...` → stalled. Use partial results.
+### Poll Errors
+Poll returns JSON. Parse `status` field:
+- `"completed"` → success, review data in `review` field.
+- `"failed"` (exit_code 3) → turn failed. Retry once. If still failing, report error to user.
+- `"timeout"` (exit_code 2) → timeout. Report partial results from `review.raw_markdown` if available. Suggest retry with lower effort.
+- `"stalled"` (exit_code 4) → stalled. Report partial results. Suggest lower effort.
+- `"error"` → infrastructure error. Report `error` field to user.
 
-Fallback when poll exits non-zero or output is unparseable:
-- Log error, report to user, suggest retry.
+### Start/Resume Errors
+Start and resume return JSON. If `status` is `"error"`:
+- Check `code` field: `"CODEX_NOT_FOUND"` → tell user to install codex. Other codes → report `error` message.
 
-Always run cleanup (step 8) regardless of error.
+### Stop Errors
+Stop returns JSON. If `status` is `"error"`:
+- Log warning but do not abort cleanup — continue stopping remaining sessions.
+
+### General Rules
+- Always run cleanup (step 8) regardless of error.
+- Use `review.raw_markdown` as fallback if structured parsing misses edge cases.
+- All runner commands return JSON (except `version`, `init`, `render`) — parse structured output, never scrape stderr.

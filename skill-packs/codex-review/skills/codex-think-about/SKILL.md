@@ -18,19 +18,22 @@ When you want to debate a technical decision or design question before implement
 
 ```bash
 RUNNER="{{RUNNER_PATH}}"
+SKILLS_DIR="{{SKILLS_DIR}}"
 ```
 
 ## Workflow
 1. **Ask user** to choose reasoning effort level: `low`, `medium`, `high`, or `xhigh` (default: `high`). Gather factual context only (no premature opinion). Set `EFFORT`.
-2. Build round-1 prompt from `references/prompts.md`.
+2. Render round-1 prompt: `echo '{"QUESTION":"...","PROJECT_CONTEXT":"...","RELEVANT_FILES":"...","CONSTRAINTS":"..."}' | node "$RUNNER" render --skill codex-think-about --template round1 --skills-dir "$SKILLS_DIR"`.
 3. **Start Codex + Claude Independent Analysis (parallel)**:
-   a. Start Codex thread: `node "$RUNNER" init --skill-name codex-think-about --working-dir "$PWD"` then `node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT" --sandbox danger-full-access`.
-   b. **Claude Independent Analysis (IMMEDIATELY, before polling)**: Analyze the question independently using own knowledge and optionally MCP tools. Follow the structured format in `references/claude-analysis-template.md`. Complete this BEFORE reading any Codex output. See `references/workflow.md` Step 2.5 for detailed instructions.
-   c. **INFORMATION BARRIER**: Do NOT read `$SESSION_DIR/review.md` or interpret Codex's conclusions until Step 5. Poll activity telemetry (file reads, URLs, topics) is allowed for progress reporting.
-4. Poll Codex with adaptive intervals (Round 1: 90s/60s/30s/15s..., Round 2+: 45s/30s/15s...). After each poll, report **specific activities** from poll output. See `references/workflow.md` for parsing guide. NEVER report generic "Codex is running".
-5. **Cross-Analysis**: After Codex completes, compare Claude's independent analysis with Codex output. Identify genuine agreements, genuine disagreements, and unique perspectives from each side. See `references/workflow.md` Step 4.
-6. Resume via `node "$RUNNER" resume "$SESSION_DIR"` and loop until consensus, stalemate, or hard cap (5 rounds).
-7. Present user-facing synthesis with agreements, disagreements, cited sources, and confidence.
+   a. Start Codex thread: `node "$RUNNER" init --skill-name codex-think-about --working-dir "$PWD"` then pipe rendered prompt to `node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT" --sandbox danger-full-access`.
+   b. **Claude Independent Analysis (IMMEDIATELY, before polling)**: Render Claude analysis prompt via `echo '{"QUESTION":"...","PROJECT_CONTEXT":"...","RELEVANT_FILES":"...","CONSTRAINTS":"..."}' | node "$RUNNER" render --skill codex-think-about --template claude-analysis --skills-dir "$SKILLS_DIR"`. Analyze the question independently using own knowledge and optionally MCP tools. Follow the rendered format. Complete this BEFORE reading any Codex output. See `references/workflow.md` Step 2.5.
+   c. **INFORMATION BARRIER**: Do NOT read Codex's conclusions until Step 5. Poll activity telemetry (file reads, URLs, topics) is allowed for progress reporting.
+4. Poll: `node "$RUNNER" poll "$SESSION_DIR"` — returns JSON with `status`, `review.insights`, `review.considerations`, `review.recommendations`, `review.suggested_status`, and `activities`. Report **specific activities** from the activities array. NEVER report generic "Codex is running" — always extract concrete details.
+5. **Cross-Analysis**: After Codex completes, compare Claude's independent analysis with `review.insights`, `review.considerations`, `review.recommendations` from poll JSON. Identify genuine agreements, genuine disagreements, and unique perspectives. See `references/workflow.md` Step 4.
+6. **Render round 2+ prompt**: `echo '{"AGREED_POINTS":"...","DISAGREED_POINTS":"...","NEW_PERSPECTIVES":"...","CONTINUE_OR_CONSENSUS_OR_STALEMATE":"..."}' | node "$RUNNER" render --skill codex-think-about --template round2+ --skills-dir "$SKILLS_DIR"`.
+7. **Resume**: `echo "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"` → validate JSON. **Go back to step 4 (Poll).** Repeat steps 4→5→6→7 until consensus, stalemate, or hard cap (5 rounds).
+8. **Finalize**: `echo '{"verdict":"...","scope":"think-about"}' | node "$RUNNER" finalize "$SESSION_DIR"`.
+9. **Cleanup**: `node "$RUNNER" stop "$SESSION_DIR"`. Present user-facing synthesis with agreements, disagreements, cited sources, and confidence.
 
 ### Effort Level Guide
 | Level    | Depth             | Best for                        | Typical time |
@@ -54,3 +57,4 @@ RUNNER="{{RUNNER_PATH}}"
 - Detect stalemate when arguments repeat with no new evidence.
 - End with clear recommendations, source list, and open questions.
 - **Information barrier**: Claude MUST complete its independent analysis (Step 3b) before reading Codex output. This prevents anchoring bias.
+- **Runner manages all session state** — do NOT manually read/write `rounds.json`, `meta.json`, or `prompt.txt` in the session directory.

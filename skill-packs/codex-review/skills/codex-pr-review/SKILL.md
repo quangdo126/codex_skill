@@ -19,6 +19,7 @@ Before opening or merging a pull request. Covers branch diff, commit history, an
 
 ```bash
 RUNNER="{{RUNNER_PATH}}"
+SKILLS_DIR="{{SKILLS_DIR}}"
 ```
 
 ## Workflow
@@ -28,13 +29,16 @@ RUNNER="{{RUNNER_PATH}}"
    - Announce: "Detected: base=`$BASE`, effort=`$EFFORT` (N files changed). Proceeding — reply to override. PR title/description optional."
    - Set `BASE` and `EFFORT`. Only block if base branch cannot be resolved.
 2. Run pre-flight checks (see `references/workflow.md` §1.5).
-3. Gather branch diff, commit log, file stats. Build prompts from `references/prompts.md`, following the Placeholder Injection Guide. **Start Codex** (background) with `node "$RUNNER" init --skill-name codex-pr-review --working-dir "$PWD"` then `node "$RUNNER" start "$SESSION_DIR"`.
-4. **Claude Independent Analysis** (BEFORE reading Codex output): Claude analyzes the PR independently using format from `references/claude-analysis-template.md`. **INFORMATION BARRIER** — do NOT read `$SESSION_DIR/review.md` until analysis is complete. See `references/workflow.md` Step 2.5.
-5. Poll Codex with adaptive intervals (Round 1: 60s/60s/30s/15s..., Round 2+: 30s/15s...). After each poll, report **specific activities** from poll output. See `references/workflow.md` for parsing guide. NEVER report generic "Codex is running" — always extract concrete details.
-6. **Cross-Analysis**: Compare Claude's FINDING-{N} with Codex's ISSUE-{N}. Identify genuine agreements, genuine disagreements, and unique findings from each side. See `references/workflow.md` Step 4.
-7. Resume debate via `node "$RUNNER" resume "$SESSION_DIR"` until consensus, stalemate, or hard cap (5 rounds).
-8. Final: consensus report + **Merge Readiness Scorecard** + **MERGE / REVISE / REJECT** recommendation. **NEVER edit code.**
-9. Cleanup: `node "$RUNNER" stop "$SESSION_DIR"`.
+3. Init session: `node "$RUNNER" init --skill-name codex-pr-review --working-dir "$PWD"` → parse `SESSION_DIR`.
+4. Render Codex prompt: `echo '{"PR_TITLE":"...","PR_DESCRIPTION":"...","BASE_BRANCH":"main","COMMIT_COUNT":"5","COMMIT_LIST":"...","USER_REQUEST":"...","SESSION_CONTEXT":"..."}' | node "$RUNNER" render --skill codex-pr-review --template round1 --skills-dir "$SKILLS_DIR"`.
+5. Start Codex (background): `echo "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"` → JSON. **Do NOT poll yet — proceed to step 6.**
+6. **Claude Independent Analysis**: Render Claude analysis prompt via `echo '{"PR_TITLE":"...","PR_DESCRIPTION":"...","BASE_BRANCH":"main","COMMIT_COUNT":"5","COMMIT_LIST":"..."}' | node "$RUNNER" render --skill codex-pr-review --template claude-analysis --skills-dir "$SKILLS_DIR"`. **INFORMATION BARRIER** — do NOT read Codex output until Claude's analysis is complete. See `references/workflow.md` Step 2.5.
+7. Poll: `node "$RUNNER" poll "$SESSION_DIR"` — returns JSON with `status`, `review.blocks`, `review.overall_assessment`, `review.verdict`, and `activities`. Report **specific activities** from the activities array. NEVER report generic "Codex is running" — always extract concrete details.
+8. **Cross-Analysis**: Parse `review.blocks` and `review.overall_assessment` from poll JSON. Compare Claude's FINDING-{N} with Codex's ISSUE-{N}. Identify genuine agreements, genuine disagreements, and unique findings from each side. See `references/workflow.md` Step 4.
+9. Render round2+ prompt: `echo '{"SESSION_CONTEXT":"...","PR_TITLE":"...","BASE_BRANCH":"main","COMMIT_COUNT":"5","COMMIT_LIST":"...","AGREED_POINTS":"...","DISAGREED_POINTS":"...","NEW_FINDINGS":"...","CONTINUE_OR_CONSENSUS_OR_STALEMATE":"..."}' | node "$RUNNER" render --skill codex-pr-review --template round2+ --skills-dir "$SKILLS_DIR"`.
+10. **Resume**: `echo "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"` → validate JSON. **Go back to step 7 (Poll).** Repeat steps 7→8→9→10 until consensus, stalemate, or hard cap (5 rounds).
+11. Finalize: `echo '{"verdict":"...","scope":"branch"}' | node "$RUNNER" finalize "$SESSION_DIR"`. Present consensus report + **Merge Readiness Scorecard** + **MERGE / REVISE / REJECT** recommendation. **NEVER edit code.**
+12. Cleanup: `node "$RUNNER" stop "$SESSION_DIR"`. Return final review summary, residual risks, and recommended next steps.
 
 ### Effort Level Guide
 | Level    | Depth             | Best for                        | Typical time |
@@ -53,7 +57,8 @@ RUNNER="{{RUNNER_PATH}}"
 ## Rules
 - **Safety**: NEVER run `git commit`, `git add`, `git rebase`, or any command that modifies code or history. This skill is debate-only.
 - Both Claude and Codex are equal peers — no reviewer/implementer framing.
-- **Information barrier**: Claude MUST complete independent analysis (Step 2.5) before reading Codex output. This prevents anchoring bias.
+- **Information barrier**: Claude MUST complete independent analysis (Step 6) before reading Codex output. This prevents anchoring bias.
 - **NEVER edit code or create commits** — only debate quality and assess merge readiness. The final output is a consensus report + merge readiness scorecard, not a fix.
 - Codex reviews only; it does not edit files.
 - If stalemate persists (same unresolved points for 2 consecutive rounds), present both sides, produce Merge Readiness Scorecard from agreed findings, and defer to user.
+- **Runner manages all session state** — do NOT manually read/write `rounds.json`, `meta.json`, or `prompt.txt` in the session directory.

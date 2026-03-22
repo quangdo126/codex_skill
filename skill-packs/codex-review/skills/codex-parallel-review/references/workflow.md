@@ -33,24 +33,62 @@ Based on mode:
 - **Working-tree**: `DIFF=$(git diff && git diff --cached)`, `FILES=$(git diff --name-only)`
 - **Branch**: `DIFF=$(git diff <base>...HEAD)`, `FILES=$(git diff --name-only <base>...HEAD)`
 
+### Compute SKILLS_DIR
+
+Compute `SKILLS_DIR` from the runner path — it is the grandparent directory of the runner script (e.g., `~/.claude/skills`):
+
+```bash
+SKILLS_DIR="$(dirname "$(dirname "$RUNNER")")"
+```
+
 ## 2) Launch All 5 Reviewers Simultaneously
 
 **CRITICAL**: Steps 2a and 2b MUST execute in the SAME message to achieve true parallelism.
 
 ### 2a) Start Codex via Runner
 
-Build Codex prompt from `references/prompts.md`. Start as background subprocess:
+Initialize session:
 
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-parallel-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
 ```
 
-Write the assembled Codex prompt to `$SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+**Validate init output:** Verify `INIT_OUTPUT` starts with `CODEX_SESSION:`. If not, report error.
+
+Render prompt (choose template by mode):
+
+For full-codebase mode:
+```bash
+PROMPT=$(echo '{"USER_REQUEST":"...","SESSION_CONTEXT":"..."}' | \
+  node "$RUNNER" render --skill codex-parallel-review --template full-round1 --skills-dir "$SKILLS_DIR")
+```
+
+For working-tree mode:
+```bash
+PROMPT=$(echo '{"USER_REQUEST":"...","SESSION_CONTEXT":"..."}' | \
+  node "$RUNNER" render --skill codex-parallel-review --template working-tree-round1 --skills-dir "$SKILLS_DIR")
+```
+
+For branch mode:
+```bash
+PROMPT=$(echo '{"USER_REQUEST":"...","SESSION_CONTEXT":"...","BASE_BRANCH":"main"}' | \
+  node "$RUNNER" render --skill codex-parallel-review --template branch-round1 --skills-dir "$SKILLS_DIR")
+```
+
+`{OUTPUT_FORMAT}` is auto-injected by the render command from `references/output-format.md`.
+
+Start Codex:
 
 ```bash
-START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT")
+echo "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"
 ```
+
+**Validate start output (JSON):**
+```json
+{ "status": "started", "session_dir": "/path", "round": 1 }
+```
+If `status` is `"error"`, report to user.
 
 ### 2b) Spawn 4 Claude Reviewer Agents
 
@@ -114,7 +152,7 @@ T=?    All complete → proceed to Merge
 
 ### Poll Codex
 ```bash
-POLL_OUTPUT=$(node "$RUNNER" poll "$SESSION_DIR")
+POLL_JSON=$(node "$RUNNER" poll "$SESSION_DIR")
 ```
 
 Adaptive intervals:
@@ -129,10 +167,58 @@ Adaptive intervals:
 - Poll 1: wait 30s
 - Poll 2+: wait 15s
 
-After each poll, report using stderr lines which contain timestamped progress events.
-**Report template:** `"Codex [{elapsed}s]: {activity from stderr}"`
+**Parse JSON output:**
 
-Continue while `POLL:running`. Stop on `completed|failed|timeout|stalled`.
+Running:
+```json
+{
+  "status": "running",
+  "round": 1,
+  "elapsed_seconds": 45,
+  "activities": [
+    { "time": 30, "type": "thinking", "detail": "analyzing auth flow" },
+    { "time": 35, "type": "command_started", "detail": "cat src/auth.js" }
+  ]
+}
+```
+
+Report **specific activities** from the `activities` array. Example: `"Codex [45s]: reading src/auth.js, analyzing auth flow"`. NEVER say generic messages like "Codex is running" or "still waiting" — always extract concrete details from activities.
+
+Continue while `status` is `"running"`.
+Stop on `"completed"|"failed"|"timeout"|"stalled"`.
+
+**Completed:**
+```json
+{
+  "status": "completed",
+  "round": 1,
+  "elapsed_seconds": 120,
+  "thread_id": "thread_abc",
+  "review": {
+    "format": "review",
+    "blocks": [
+      { "id": 1, "prefix": "ISSUE", "title": "Missing validation", "category": "security", "severity": "high", "location": "src/api.js:23", "problem": "...", "evidence": "...", "suggested_fix": "...", "extra": {} }
+    ],
+    "verdict": { "status": "REVISE", "reason": "..." },
+    "overall_assessment": null,
+    "raw_markdown": "..."
+  },
+  "activities": [...]
+}
+```
+
+**Failed/Timeout/Stalled:**
+```json
+{
+  "status": "failed|timeout|stalled",
+  "round": 1,
+  "elapsed_seconds": 3600,
+  "exit_code": 2,
+  "error": "Timeout after 3600s",
+  "review": null,
+  "activities": [...]
+}
+```
 
 ### Collect Agent Results
 After Codex completes (or during polling if agents finish first), read results from all 4 background agents. Each agent returns its FINDING-{N} blocks.
@@ -149,7 +235,7 @@ Across the 4 agents, some findings may overlap (e.g., Agent 1 flags a null check
 - Renumber all Claude findings sequentially: FINDING-1, FINDING-2, ...
 
 ### 4b) Cross-match Claude vs Codex
-1. Parse Codex `review.md` for `ISSUE-{N}` blocks.
+1. Parse Codex `review.blocks` from poll JSON for `ISSUE-{N}` blocks. Use `review.raw_markdown` as fallback.
 2. Match using heuristic:
    - **Same file + overlapping location + same category** → `agreed`
    - **Same file + same category + different location** → check if same root cause → `agreed` or `unique`
@@ -180,26 +266,33 @@ Claude applies fixes immediately. Record fix evidence.
 
 For each round:
 
-1. Build debate prompt from `references/prompts.md` (Debate Prompt):
+1. Render debate prompt:
+   ```bash
+   PROMPT=$(echo '{"CODEX_ONLY_WITH_REBUTTALS":"...","CLAUDE_ONLY_FINDINGS":"...","CONTRADICTIONS":"..."}' | \
+     node "$RUNNER" render --skill codex-parallel-review --template debate --skills-dir "$SKILLS_DIR")
+   ```
    - Include codex-only findings Claude disagrees with + rebuttals.
    - Include claude-only findings for Codex to evaluate.
    - Include contradictions with both arguments.
    - Exclude already-resolved items.
 
 2. Resume Codex thread:
-
-   Write the debate prompt to `$SESSION_DIR/prompt.txt` (overwrites previous round's prompt).
-
    ```bash
-   START_OUTPUT=$(node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
+   echo "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"
+   ```
+
+   **Validate resume output (JSON):**
+   ```json
+   { "status": "started", "session_dir": "/path", "round": 2, "thread_id": "thread_abc" }
    ```
 
 3. Poll (Round 2+ intervals: 30s/15s...).
 
-4. Parse Codex response (`RESPONSE-{N}` blocks):
+4. Parse Codex response from `review.blocks` (`RESPONSE-{N}` blocks):
    - `Action: accept` → resolved, Claude applies fix if needed.
    - `Action: reject` with new evidence → Claude reconsiders.
    - `Action: revise` → Codex offers modified position; Claude evaluates.
+   - Use `review.raw_markdown` as fallback if structured parsing misses edge cases.
 
 5. Track per-finding resolution. Remove resolved items from next round prompt.
 
@@ -208,15 +301,12 @@ For each round:
    - Round limit (`MAX_ROUNDS`) reached → stop, report unresolved.
    - Stalemate: same arguments repeated 2 consecutive rounds → stop.
 
-After each debate round, append round summary to `$SESSION_DIR/rounds.json`:
-- Read existing rounds.json or start with empty array `[]`
-- Append: `{ "round": N, "elapsed_seconds": ..., "resolved": ..., "unresolved": ..., "new_findings": ... }`
-- Write back to `$SESSION_DIR/rounds.json`
-
 ### Branch Mode Note
 Commit fixes before each resume. Codex reads `git diff <base>...HEAD` — uncommitted fixes are invisible.
 
-## 6) Final Report
+## 6) Final Report + Finalize
+
+### Final Report
 
 ```
 ## Parallel Review Report
@@ -248,26 +338,18 @@ Commit fixes before each resume. Codex reads `git diff <base>...HEAD` — uncomm
 {residual risk from unresolved items}
 ```
 
-## 6.5) Session Finalization
+### Session Finalization
 
-Write session metadata after the final report:
+After the final report, finalize the session:
 
 ```bash
-cat > "$SESSION_DIR/meta.json" << METAEOF
-{
-  "skill": "codex-parallel-review",
-  "version": 15,
-  "effort": "$EFFORT",
-  "mode": "$MODE",
-  "rounds": ${DEBATE_ROUNDS:-0},
-  "verdict": "$FINAL_VERDICT",
-  "reviewers": 5,
-  "timing": { "total_seconds": ${ELAPSED_SECONDS:-0} },
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-METAEOF
-echo "Session saved to: $SESSION_DIR"
+echo '{"verdict":"CONSENSUS","scope":"full-codebase","issues":{"total_found":10,"total_fixed":7,"total_disputed":3}}' | \
+  node "$RUNNER" finalize "$SESSION_DIR"
 ```
+
+For working-tree mode, use `"scope":"working-tree"`. For branch mode, use `"scope":"branch"`.
+
+The runner auto-computes `meta.json` with timing, round count, and session metadata.
 
 Report `$SESSION_DIR` path to the user in the final summary.
 
@@ -277,18 +359,20 @@ Report `$SESSION_DIR` path to the user in the final summary.
 node "$RUNNER" stop "$SESSION_DIR"
 ```
 Always run regardless of outcome (success, failure, timeout, stalemate).
+
 ## Error Handling
 
-### Codex Runner Errors
-Runner `poll` returns `POLL:<status>:<elapsed>[:exit_code:details]`:
-- `POLL:completed:...` → success, read `review.md`.
-- `POLL:failed:...:3:...` → turn failed. Retry once. If still fails, report error.
-- `POLL:timeout:...:2:...` → timeout. Use partial results if `review.md` exists.
-- `POLL:stalled:...:4:...` → stalled. Use partial results.
+### Poll Errors
+Poll returns JSON. Parse `status` field:
+- `"completed"` → success, review data in `review` field.
+- `"failed"` (exit_code 3) → turn failed. Retry once. If still failing, report error to user.
+- `"timeout"` (exit_code 2) → timeout. Report partial results from `review.raw_markdown` if available. Suggest retry with lower effort.
+- `"stalled"` (exit_code 4) → stalled. Report partial results. Suggest lower effort.
+- `"error"` → infrastructure error. Report `error` field to user.
 
-Runner `start` exit codes:
-- 1 → generic error. Report message.
-- 5 → Codex CLI not found. Tell user to install.
+### Start/Resume Errors
+Start and resume return JSON. If `status` is `"error"`:
+- Check `code` field: `"CODEX_NOT_FOUND"` → tell user to install codex. Other codes → report `error` message.
 
 ### Claude Agent Errors
 - Agent fails to return → log error, exclude from merge, note in report.
@@ -298,7 +382,9 @@ Runner `start` exit codes:
 ### Fallback Mode
 If Codex fails AND all agents fail: Claude performs inline review covering all categories (correctness, security, performance, maintainability), produces FINDING-{N} blocks, presents results without debate.
 
-Always run cleanup (step 7) regardless of error.
+### General Rules
+- Always run cleanup (step 7) regardless of error.
+- Use `review.raw_markdown` as fallback if structured parsing misses edge cases.
 
 ## Stalemate Handling
 

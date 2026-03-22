@@ -49,34 +49,50 @@ Before starting Round 1:
 
 > **Write failures**: If saving the updated plan file fails in step 4/7, report the error and ask user for an alternative writable path. No pre-flight write check is needed — Claude Code's write tool provides a clear error at save time.
 
-## 1.8) Prompt Assembly
-
-1. Read the Round 1 template from `references/prompts.md`.
-2. Replace `{PLAN_PATH}` with the absolute path to the plan file.
-3. Replace `{USER_REQUEST}` with user's task description (or default).
-4. Build `{SESSION_CONTEXT}` using the structured schema from `references/prompts.md` Placeholder Injection Guide.
-5. Replace `{OUTPUT_FORMAT}` by copying the entire fenced code block from `references/output-format.md` (the single block after "Use this exact shape").
-6. Replace `{ACCEPTANCE_CRITERIA}` with user-provided criteria or derived criteria from step 1.5.
-
 ## 2) Start Round 1
+
+### 2a) Initialize Session
+
 ```bash
 INIT_OUTPUT=$(node "$RUNNER" init --skill-name codex-plan-review --working-dir "$PWD")
 SESSION_DIR=${INIT_OUTPUT#CODEX_SESSION:}
 ```
 
-Write the assembled prompt to `$SESSION_DIR/prompt.txt` using Claude Code's **Write tool** (not Bash — this avoids shell quoting issues with special characters in code).
+**Validate init output:** Verify `INIT_OUTPUT` starts with `CODEX_SESSION:`. If not, report error.
+
+### 2b) Render Prompt
+
+Compute `SKILLS_DIR` from the runner path — it is the grandparent directory of the runner script:
 
 ```bash
-START_OUTPUT=$(node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT")
+SKILLS_DIR="$(dirname "$(dirname "$RUNNER")")"
 ```
 
-**Validate init output:** Verify `INIT_OUTPUT` starts with `CODEX_SESSION:`. If not, report error.
-**Validate start output:** Verify `START_OUTPUT` starts with `CODEX_STARTED:`. If not, report error.
+This resolves to the directory containing all installed skill directories (e.g., `~/.claude/skills`).
+
+```bash
+PROMPT=$(echo '{"PLAN_PATH":"/abs/path/to/plan.md","USER_REQUEST":"...","SESSION_CONTEXT":"...","ACCEPTANCE_CRITERIA":"..."}' | \
+  node "$RUNNER" render --skill codex-plan-review --template round1 --skills-dir "$SKILLS_DIR")
+```
+
+`{OUTPUT_FORMAT}` is auto-injected by the render command from `references/output-format.md`.
+
+### 2c) Start Codex
+
+```bash
+echo "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"
+```
+
+**Validate start output (JSON):**
+```json
+{ "status": "started", "session_dir": "/path", "round": 1 }
+```
+If `status` is `"error"`, report to user.
 
 ## 3) Poll
 
 ```bash
-POLL_OUTPUT=$(node "$RUNNER" poll "$SESSION_DIR")
+POLL_JSON=$(node "$RUNNER" poll "$SESSION_DIR")
 ```
 
 Adaptive intervals — start slow, speed up:
@@ -91,50 +107,97 @@ Adaptive intervals — start slow, speed up:
 - Poll 1: wait 30s
 - Poll 2+: wait 15s
 
-After each poll, report **specific activities** to the user by parsing stderr lines. Stderr contains timestamped progress events like `[Ns] Codex thinking: ...`, `[Ns] Codex running: ...`, `[Ns] Codex completed: ...`. Use these to build a specific, informative status update. NEVER say generic messages like "Codex is running" or "still waiting" — these provide no information.
+**Parse JSON output:**
 
-**Poll stdout format:**
-- Line 1: `POLL:{status}:{elapsed}[:{exit_code}:{details}]`
-- Line 2 (if completed): `THREAD_ID:{id}`
+Running:
+```json
+{
+  "status": "running",
+  "round": 1,
+  "elapsed_seconds": 45,
+  "activities": [
+    { "time": 30, "type": "thinking", "detail": "analyzing plan structure" },
+    { "time": 35, "type": "command_started", "detail": "cat plan.md" }
+  ]
+}
+```
 
-**Poll stderr format (progress events):**
-- `[{elapsed}s] Codex is thinking...` — Codex started a new turn
-- `[{elapsed}s] Codex thinking: {reasoning text}` — Codex reasoning about something
-- `[{elapsed}s] Codex running: {command}` — Codex executing a command
-- `[{elapsed}s] Codex completed: {command}` — Codex finished a command
+Report **specific activities** from the `activities` array. Example: `"Codex [45s]: reading plan.md, analyzing section 3 structure"`. NEVER say generic messages like "Codex is running" or "still waiting" — always extract concrete details from activities.
 
-**Report template:** Parse the stderr lines and report what Codex is actually doing. Example: `"Codex [45s]: reading plan.md, analyzing section 3 structure"`
+Continue while `status` is `"running"`.
+Stop on `"completed"|"failed"|"timeout"|"stalled"`.
 
-Continue while status is `running`.
-Stop on `completed|failed|timeout|stalled`.
+**Completed:**
+```json
+{
+  "status": "completed",
+  "round": 1,
+  "elapsed_seconds": 120,
+  "thread_id": "thread_abc",
+  "review": {
+    "format": "review",
+    "blocks": [
+      { "id": 1, "prefix": "ISSUE", "title": "Missing error handling section", "category": "completeness", "severity": "high", "location": "plan.md:section-3", "problem": "...", "evidence": "...", "suggested_fix": "...", "extra": {} }
+    ],
+    "verdict": { "status": "REVISE", "reason": "..." },
+    "overall_assessment": null,
+    "raw_markdown": "..."
+  },
+  "activities": [...]
+}
+```
+
+**Failed/Timeout/Stalled:**
+```json
+{
+  "status": "failed|timeout|stalled",
+  "round": 1,
+  "elapsed_seconds": 3600,
+  "exit_code": 2,
+  "error": "Timeout after 3600s",
+  "review": null,
+  "activities": [...]
+}
+```
 
 ## 4) Parse Review
-- Read `THREAD_ID:` and `review.md` from runner output/state directory.
-- Extract `ISSUE-{N}` blocks.
-- Apply accepted fixes to plan.
-- **Save the updated plan file before resuming.** Codex round 2+ will re-read it from the plan path.
-- Build rebuttal packet for disputed items.
-- Record the set of open (unresolved) ISSUE-{N} IDs for stalemate tracking.
 
-After parsing each round's review, append round summary to `$SESSION_DIR/rounds.json`:
-- Read existing rounds.json or start with empty array `[]`
-- Append: `{ "round": N, "elapsed_seconds": ..., "verdict": "...", "issues_found": ..., "issues_fixed": ..., "issues_disputed": ... }`
-- Write back to `$SESSION_DIR/rounds.json`
+Parse issues from the poll JSON `review.blocks` array:
+- Each block has `id`, `prefix`, `title`, `category`, `severity`, `location`, `problem`, `evidence`, `suggested_fix`, and optionally `why_it_matters`, `extra`.
+- The verdict is in `review.verdict.status` (e.g., `"REVISE"`, `"APPROVE"`).
+- `review.raw_markdown` is always available as fallback.
+
+For valid issues: apply fixes to the plan and **save the plan file** before resuming. Codex round 2+ will re-read it from the plan path.
+For invalid issues: write rebuttal with concrete proof (reasoning, references, behavior).
+
+Record the set of open (unresolved) ISSUE-{N} IDs for stalemate tracking.
+
+> **Note:** Round tracking is automatic. The runner manages `rounds.json` — do NOT read or write it manually.
 
 ## 5) Resume (Round 2+)
 
-Build the rebuttal prompt from `references/prompts.md` (Rebuttal Prompt template). Replace all placeholders including `{PLAN_PATH}` so Codex re-reads the updated plan.
-
-Write the rebuttal prompt to `$SESSION_DIR/prompt.txt` (overwrites previous round's prompt).
+### 5a) Render Rebuttal Prompt
 
 ```bash
-START_OUTPUT=$(node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT")
+PROMPT=$(echo '{"PLAN_PATH":"/abs/path/to/plan.md","SESSION_CONTEXT":"...","FIXED_ITEMS":"...","DISPUTED_ITEMS":"..."}' | \
+  node "$RUNNER" render --skill codex-plan-review --template rebuttal --skills-dir "$SKILLS_DIR")
+```
+
+### 5b) Resume Codex
+
+```bash
+echo "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"
+```
+
+**Validate resume output (JSON):**
+```json
+{ "status": "started", "session_dir": "/path", "round": 2, "thread_id": "thread_abc" }
 ```
 
 Then **go back to step 3 (Poll).** After poll completes, repeat step 4 (Parse) and check stop conditions below. If not met, resume again (step 5). Continue this loop until a stop condition is reached.
 
 ## 6) Stop Conditions
-- `VERDICT: APPROVE`.
+- Codex returns `VERDICT: APPROVE` (check `review.verdict.status === "APPROVE"` in poll JSON).
 - Stalemate detected (see below).
 - User stops debate.
 - **Hard cap: 5 rounds.** At cap, force final synthesis with unresolved issues listed as residual risks.
@@ -170,48 +233,45 @@ Then present:
 - Recommended next steps before implementation.
 - Final plan path.
 
-## 8) Cleanup
+## 8) Session Finalization
+
+After the final round completes, finalize the session:
+
+```bash
+echo '{"verdict":"APPROVE"}' | node "$RUNNER" finalize "$SESSION_DIR"
+```
+
+Optionally include issue tracking:
+```bash
+echo '{"verdict":"APPROVE","issues":{"total_found":5,"total_fixed":3,"total_disputed":2}}' | \
+  node "$RUNNER" finalize "$SESSION_DIR"
+```
+
+The runner auto-computes `meta.json` with timing, round count, and session metadata.
+
+Report `$SESSION_DIR` path to the user in the final summary.
+
+## 9) Cleanup
 ```bash
 node "$RUNNER" stop "$SESSION_DIR"
 ```
 Kill any remaining Codex/watchdog processes. Always run this step, even if the debate ended due to failure or timeout.
 
-## Session Finalization
-
-After the final round completes, write session metadata to the session directory (review.md is already present from poll):
-
-```bash
-cat > "$SESSION_DIR/meta.json" << METAEOF
-{
-  "skill": "codex-plan-review",
-  "version": 15,
-  "effort": "$EFFORT",
-  "rounds": ${ROUND_COUNT:-0},
-  "verdict": "$FINAL_VERDICT",
-  "timing": { "total_seconds": ${ELAPSED_SECONDS:-0} },
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-METAEOF
-echo "Session saved to: $SESSION_DIR"
-```
-
-Report `$SESSION_DIR` path to the user in the final summary.
-
 ## Error Handling
 
-Runner `poll` returns status via output string `POLL:<status>:<elapsed>[:exit_code:details]`. Normally exits 0, but may exit non-zero on invalid state dir or I/O error — handle both:
+### Poll Errors
+Poll returns JSON. Parse `status` field:
+- `"completed"` → success, review data in `review` field.
+- `"failed"` (exit_code 3) → turn failed. Retry once. If still failing, report error to user.
+- `"timeout"` (exit_code 2) → timeout. Report partial results from `review.raw_markdown` if available. Suggest retry with lower effort.
+- `"stalled"` (exit_code 4) → stalled. Report partial results. Suggest lower effort.
+- `"error"` → infrastructure error. Report `error` field to user.
 
-**Parse POLL string (exit 0):**
-- `POLL:completed:...` → success, read review.md
-- `POLL:failed:...:3:...` → turn failed. Retry once. If still failing, report error to user.
-- `POLL:timeout:...:2:...` → timeout. Report partial results if review.md exists. Suggest retry with lower effort.
-- `POLL:stalled:...:4:...` → stalled. Report partial results. Suggest lower effort.
+### Start/Resume Errors
+Start and resume return JSON. If `status` is `"error"`:
+- Check `code` field: `"CODEX_NOT_FOUND"` → tell user to install codex. Other codes → report `error` message.
 
-**Fallback when poll exits non-zero or output is unparseable:**
-- Log error output, report infrastructure error to user, suggest retry.
-
-Runner `start` may fail with exit code:
-- 1 → generic error (invalid args, I/O). Report error message to user.
-- 5 → Codex CLI not found. Tell user to install codex.
-
-Always run cleanup (step 8) regardless of error.
+### General Rules
+- Always run cleanup (step 9) regardless of error.
+- Use `review.raw_markdown` as fallback if structured parsing misses edge cases.
+- Claude NEVER writes files to the session directory — all session I/O is handled by runner commands.

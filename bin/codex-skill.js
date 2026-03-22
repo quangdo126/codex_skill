@@ -82,21 +82,23 @@ try {
     fs.chmodSync(runnerDest, 0o755);
   }
 
-  // 2. Process each skill: inject RUNNER_PATH into SKILL.md, copy references/
+  // 2. Process each skill: inject RUNNER_PATH and SKILLS_DIR into SKILL.md, copy references/
   const escapedRunnerPath = escapeForDoubleQuotedShell(runnerPath);
+  const escapedSkillsRoot = escapeForDoubleQuotedShell(skillsRoot);
 
   for (const skill of SKILLS) {
     const skillSrcDir = path.join(skillPackDir, 'skills', skill);
     const skillDestDir = path.join(stagingDir, skill);
     fs.mkdirSync(skillDestDir, { recursive: true });
 
-    // Read template SKILL.md, inject runner path
+    // Read template SKILL.md, inject runner path and skills dir
     const templatePath = path.join(skillSrcDir, 'SKILL.md');
     const template = fs.readFileSync(templatePath, 'utf8');
     if (!template.includes('{{RUNNER_PATH}}')) {
       throw new Error(`Template ${skill}/SKILL.md missing {{RUNNER_PATH}} placeholder`);
     }
-    const injected = template.replaceAll('{{RUNNER_PATH}}', escapedRunnerPath);
+    let injected = template.replaceAll('{{RUNNER_PATH}}', escapedRunnerPath);
+    injected = injected.replaceAll('{{SKILLS_DIR}}', escapedSkillsRoot);
     if (injected.includes('{{RUNNER_PATH}}')) {
       throw new Error(`Template ${skill}/SKILL.md still contains {{RUNNER_PATH}} after injection`);
     }
