@@ -259,6 +259,18 @@ done
 
 **Chunk failure**: Poll `failed` → retry once; still fails → skip, note "SKIPPED: {reason}" (use partial `review.raw_markdown` if available). **>50% chunks failed** → warn user, ask continue or abort. **All chunks failed** → Claude fallback review of top 5 priority chunks, report as "Fallback: Claude-only review". **Validation failure** → skip, use cross-cutting findings as-is. **Poll `timeout`** → report partial results, suggest lower effort. **Poll `stalled`** → if `recoverable === true`: `stop` → prepend recovery note → `resume --recovery` → poll (30s, 15s+). If `recoverable === false`: report partial results, suggest lower effort. **Start `error` with `CODEX_NOT_FOUND`** → tell user to install codex. **Stop `error`** → log warning, continue stopping remaining sessions. **Cleanup sequencing**: run `finalize` + `stop` ONLY after recovery resolves (success or second failure). Do NOT finalize before recovery attempt. Exit codes: 0=success, 2=timeout, 3=retry once, 4=stalled partial, 5=codex not found.
 
+## Flavor Text
+
+Load `references/flavor-text.md` at skill start. Pick 1 random message per trigger from the matching pool — never repeat within session. Display as blockquote. Replace `{N}`, `{TOTAL}`, `{CHUNK}` with actual values. User can disable with "no flavor" or "skip humor".
+
+**Triggers** (insert flavor text AT these workflow moments):
+- **Step 1** (after announce): `SKILL_START`
+- **Step 4d** (each poll while running): `POLL_WAITING` (only on first poll per chunk to avoid spam)
+- **Step 4d** (poll completed): `CODEX_RETURNED`
+- **Step 4g** (each chunk complete): `CHUNK_PROGRESS`
+- **Step 5** (cross-cutting analysis start): `CHUNK_CROSS`
+- **Step 7** (final report): `FINAL_SUMMARY`
+
 ## Rules
 - If invoked during Claude Code plan mode, exit plan mode first — this skill requires code editing.
 - Codex reviews only; it does not edit files.

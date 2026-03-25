@@ -110,6 +110,18 @@ try {
       throw new Error(`Missing references/ directory for ${skill}`);
     }
     copyDirSync(refsSrc, path.join(skillDestDir, 'references'));
+
+    // Copy shared files into skill's references/ (flavor-text.md, etc.)
+    const sharedDir = path.join(skillPackDir, 'shared');
+    if (fs.existsSync(sharedDir)) {
+      const skillRefsDir = path.join(skillDestDir, 'references');
+      for (const entry of fs.readdirSync(sharedDir)) {
+        const sharedFile = path.join(sharedDir, entry);
+        if (fs.statSync(sharedFile).isFile()) {
+          fs.copyFileSync(sharedFile, path.join(skillRefsDir, entry));
+        }
+      }
+    }
   }
 
   // 3. Verify runner works

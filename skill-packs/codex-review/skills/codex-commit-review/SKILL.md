@@ -207,6 +207,22 @@ node "$RUNNER" stop "$SESSION_DIR"
 - Start/resume `CODEX_NOT_FOUND` → tell user to install codex.
 - **Cleanup sequencing**: run `finalize` + `stop` ONLY after recovery resolves (success or second failure). Do NOT finalize before recovery attempt.
 
+## Flavor Text
+
+Load `references/flavor-text.md` at skill start. Pick 1 random message per trigger from the matching pool — never repeat within session. Display as blockquote. Replace `{N}`, `{TOTAL}`, etc. with actual values. User can disable with "no flavor" or "skip humor".
+
+**Triggers** (insert flavor text AT these workflow moments):
+- **Step 1** (after announce): `SKILL_START`
+- **Step 8** (each poll while running): `POLL_WAITING` (only on first poll per round to avoid spam)
+- **Step 8** (poll completed): `CODEX_RETURNED`
+- **Step 9** (cross-analysis start): `THINK_PEER`
+- **Step 9** (per agreement found): `THINK_AGREE`
+- **Step 9** (per disagreement found): `THINK_DISAGREE`
+- **Step 10** (before resume): `SEND_REBUTTAL`
+- **Step 10** (round == 3): `LATE_ROUND_3` — (round == 4): `LATE_ROUND_4` — (round == 5): `LATE_ROUND_5`
+- **Step 11** (consensus): `APPROVE_VICTORY` — (stalemate): `STALEMATE_DRAW` — (hard cap): `HARD_CAP`
+- **Step 12** (final output): `FINAL_SUMMARY`
+
 ## Rules
 - **Safety**: NEVER run `git commit --amend`, `git rebase`, or any command that modifies commit history. This skill is debate-only.
 - **No modifications**: NEVER modify code. Report + suggest only. The final output is a consensus report with suggested fixes, not applied changes.

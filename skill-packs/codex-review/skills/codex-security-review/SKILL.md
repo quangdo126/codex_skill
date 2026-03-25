@@ -203,6 +203,20 @@ node "$RUNNER" stop "$SESSION_DIR"
 - Start/resume `CODEX_NOT_FOUND` → tell user to install codex.
 - **Cleanup sequencing**: run `finalize` + `stop` ONLY after recovery resolves (success or second failure). Do NOT finalize before recovery attempt.
 
+## Flavor Text
+
+Load `references/flavor-text.md` at skill start. Pick 1 random message per trigger from the matching pool — never repeat within session. Display as blockquote. Replace `{N}`, `{TOTAL}`, etc. with actual values. User can disable with "no flavor" or "skip humor".
+
+**Triggers** (insert flavor text AT these workflow moments):
+- **Step 1** (after announce): `SKILL_START`
+- **Step 6** (each poll while running): `POLL_WAITING` (only on first poll per round to avoid spam)
+- **Step 6** (poll completed): `CODEX_RETURNED`
+- **Step 7** (each valid fix applied): `APPLY_FIX`
+- **Step 8** (before resume): `SEND_REBUTTAL`
+- **Step 8** (round == 3): `LATE_ROUND_3` — (round == 4): `LATE_ROUND_4` — (round == 5): `LATE_ROUND_5`
+- **Step 9** (APPROVE): `APPROVE_VICTORY` — (stalemate): `STALEMATE_DRAW` — (hard cap): `HARD_CAP`
+- **Step 10** (final output): `FINAL_SUMMARY`
+
 ## Rules
 - If invoked during Claude Code plan mode, exit plan mode first — this skill requires code editing.
 - Codex reviews only; it does not edit files.

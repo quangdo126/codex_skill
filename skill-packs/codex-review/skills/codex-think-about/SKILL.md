@@ -181,6 +181,21 @@ node "$RUNNER" stop "$SESSION_DIR"
 - Start/resume `CODEX_NOT_FOUND` → tell user to install codex.
 - **Cleanup sequencing**: run `finalize` + `stop` ONLY after recovery resolves (success or second failure). Do NOT finalize before recovery attempt.
 
+## Flavor Text
+
+Load `references/flavor-text.md` at skill start. Pick 1 random message per trigger from the matching pool — never repeat within session. Display as blockquote. Replace `{N}`, `{TOTAL}`, etc. with actual values. User can disable with "no flavor" or "skip humor".
+
+**Triggers** (insert flavor text AT these workflow moments):
+- **Step 1** (after question sharpening): `SKILL_START`
+- **Step 5** (each poll while running): `POLL_WAITING` (only on first poll per round to avoid spam)
+- **Step 5** (poll completed): `CODEX_RETURNED`
+- **Step 6** (cross-analysis start): `THINK_PEER`
+- **Step 6** (per agreement found): `THINK_AGREE`
+- **Step 6** (per disagreement found): `THINK_DISAGREE`
+- **Step 7** (round == 3): `LATE_ROUND_3` — (round == 4): `LATE_ROUND_4` — (round == 5): `LATE_ROUND_5`
+- **Step 8** (consensus): `APPROVE_VICTORY` — (stalemate): `STALEMATE_DRAW` — (hard cap): `HARD_CAP`
+- **Step 9** (final output): `FINAL_SUMMARY`
+
 ## Rules
 - Keep roles as peers; no reviewer/implementer framing.
 - **Codex must NOT modify, create, or delete ANY project files.** `danger-full-access` sandbox is used SOLELY for web search. Prompt contains strict guardrails.
