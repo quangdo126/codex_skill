@@ -1,220 +1,220 @@
 # Flavor Text — Vietnamese Humor for Codex Review Skills
 
-> **Tone**: Savage mode — trash-talk than thien, Vietnamese dev slang, gaming culture
+> **Tone**: Savage mode — trash-talk thân thiện, Vietnamese dev slang, gaming culture
 > **Format**: Display as `> {emoji} {message}` blockquote
 > **Rules**: Pick random from pool, NEVER repeat same message within 1 session. Replace `{N}`, `{TOTAL}`, `{CHUNK}`, `{ROUND}` with actual values.
 
 ---
 
 ## 1. SKILL_START
-> Trigger: Skill bat dau chay (Step 1 Announce)
+> Trigger: Skill bắt đầu chạy (Step 1 Announce)
 
-- `> 🎯 Oke, vao tran thoi. Codex a, hom nay anh nhe tay nha~`
-- `> 🔥 Lai mot ngay dep troi de cai nhau voi Codex`
+- `> 🎯 Oke, vào trận thôi. Codex à, hôm nay anh nhẹ tay nha~`
+- `> 🔥 Lại một ngày đẹp trời để cãi nhau với Codex`
 - `> ⚔️ Claude vs Codex — Round 1. FIGHT!`
 - `> 🎮 Loading review session... Player 1: Claude. Player 2: Codex. LET'S GO!`
-- `> 💪 Codex, san sang chua? Toi khong doi duoc nua roi`
-- `> 🏟️ Welcome to the arena! Hom nay ai thua phai mass review`
-- `> 🎯 Toi da uong cafe roi. Codex thi sao? A quen, no la AI khong can cafe 😤`
-- `> 🔥 Bat dau thoi, code khong tu review chinh no duoc dau`
+- `> 💪 Codex, sẵn sàng chưa? Tôi không đợi được nữa rồi`
+- `> 🏟️ Welcome to the arena! Hôm nay ai thua phải mass review`
+- `> 🎯 Tôi đã uống cafe rồi. Codex thì sao? À quên, nó là AI không cần cafe 😤`
+- `> 🔥 Bắt đầu thôi, code không tự review chính nó được đâu`
 
 ## 2. POLL_WAITING
-> Trigger: Dang cho Codex tra ket qua (Step 6 Poll loop, status === "running")
+> Trigger: Đang chờ Codex trả kết quả (Step 6 Poll loop, status === "running")
 
-- `> 🐢 Codex dang suy nghi... chac thang nay doc code cham lam`
-- `> ⏳ Codex van dang chay... binh tinh, de no doc cho het da`
-- `> 🧠 Codex dang phan tich... hy vong no tim duoc gi hay ho`
-- `> ☕ Doi Codex... tranh thu di pha cafe di`
-- `> 🔍 Codex dang review... toi ca cuoc no se tim duoc it nhat 1 bug`
-- `> ⏰ Codex chua xong... thoi de toi ngoi do code cua minh truoc`
-- `> 🎯 Codex dang lam viec... im lang truoc bao~`
-- `> 🐌 Van dang cho... Codex a, co can toi giup khong?`
+- `> 🐢 Codex đang suy nghĩ... chắc thằng này đọc code chậm lắm`
+- `> ⏳ Codex vẫn đang chạy... bình tĩnh, để nó đọc cho hết đã`
+- `> 🧠 Codex đang phân tích... hy vọng nó tìm được gì hay ho`
+- `> ☕ Đợi Codex... tranh thủ đi pha cafe đi`
+- `> 🔍 Codex đang review... tôi cá cược nó sẽ tìm được ít nhất 1 bug`
+- `> ⏰ Codex chưa xong... thôi để tôi ngồi đọc code của mình trước`
+- `> 🎯 Codex đang làm việc... im lặng trước bão~`
+- `> 🐌 Vẫn đang chờ... Codex à, có cần tôi giúp không?`
 
 ## 3. CODEX_RETURNED
-> Trigger: Codex tra ket qua (poll status === "completed")
+> Trigger: Codex trả kết quả (poll status === "completed")
 
-- `> 📊 OK Codex da nop bai. De anh cham diem xem duoc may phay`
-- `> 😤 Bo lao! No dam phan bac toi, de toi xem no noi gi`
-- `> 🧐 Codex da tra loi. Xem thang nay co gi hay khong...`
-- `> 📬 Codex gui ket qua roi. Mo ra xem nao~`
-- `> 🎯 Codex xong roi! Nhanh phet — nhung nhanh chua chac da tot`
-- `> 🔎 Ket qua tu Codex da ve. De toi dieu tra xem no noi dung khong`
-- `> 📋 Codex da nop bai kiem tra. Cham diem thoi!`
-- `> 😏 A, Codex da co y kien. Interesting... rat interesting`
+- `> 📊 OK Codex đã nộp bài. Để anh chấm điểm xem được mấy phẩy`
+- `> 😤 Bố láo! Nó dám phản bác tôi, để tôi xem nó nói gì`
+- `> 🧐 Codex đã trả lời. Xem thằng này có gì hay không...`
+- `> 📬 Codex gửi kết quả rồi. Mở ra xem nào~`
+- `> 🎯 Codex xong rồi! Nhanh phết — nhưng nhanh chưa chắc đã tốt`
+- `> 🔎 Kết quả từ Codex đã về. Để tôi điều tra xem nó nói đúng không`
+- `> 📋 Codex đã nộp bài kiểm tra. Chấm điểm thôi!`
+- `> 😏 À, Codex đã có ý kiến. Interesting... rất interesting`
 
 ## 4. APPLY_FIX
 > Trigger: Claude fix 1 valid issue (Step 7 Apply)
 
-- `> ✅ Duoc roi, diem nay hop ly. Fix xong roi — nhung dung co tuong lan sau cung vay nha 😏`
-- `> 🔧 OK toi cong nhan cai nay. Fixed! Codex 1 — Claude 0... tam thoi`
-- `> ✅ Fair point, Codex. Da fix. Nhung con nhung cai khac thi sao?`
-- `> 🛠️ Fix xong. Toi khong ngai nhan sai — nhung Codex cung dung qua tu hao`
-- `> ✅ Accepted va fixed. Codex co mat sang — lan nay thoi nha`
-- `> 🔧 OK cai nay dung that. Da sua roi. Happy now, Codex?`
-- `> ✅ Toi fix roi nhe. Nhung dung tuong la toi se dong y het moi thu dau`
-- `> 🛠️ Good catch, Codex. Fixed — nhung cuoc chien van con dai`
+- `> ✅ Được rồi, điểm này hợp lý. Fix xong rồi — nhưng đừng có tưởng lần sau cũng vậy nha 😏`
+- `> 🔧 OK tôi công nhận cái này. Fixed! Codex 1 — Claude 0... tạm thời`
+- `> ✅ Fair point, Codex. Đã fix. Nhưng còn những cái khác thì sao?`
+- `> 🛠️ Fix xong. Tôi không ngại nhận sai — nhưng Codex cũng đừng quá tự hào`
+- `> ✅ Accepted và fixed. Codex có mắt sáng — lần này thôi nha`
+- `> 🔧 OK cái này đúng thật. Đã sửa rồi. Happy now, Codex?`
+- `> ✅ Tôi fix rồi nhé. Nhưng đừng tưởng là tôi sẽ đồng ý hết mọi thứ đâu`
+- `> 🛠️ Good catch, Codex. Fixed — nhưng cuộc chiến vẫn còn dài`
 
 ## 5. SEND_REBUTTAL
-> Trigger: Claude gui phan bac (Step 8 Resume)
+> Trigger: Claude gửi phản bác (Step 8 Resume)
 
-- `> 💥 Hmm, Codex tuong dung nhung sai bet — gui rebuttal thoi`
-- `> 🔫 Toi se khong ngung ban neu Codex tiep tuc tra dua`
-- `> 💢 Sai roi Codex oi! De toi chi cho ma thay`
-- `> 🎯 Nice try, nhung khong — day la ly do tai sao Codex sai`
-- `> 😤 Codex, ban co chac khong? Vi toi chac chan ban sai`
-- `> 💥 Rebuttal incoming! Codex se phai doc lai code lan nua`
-- `> 🔥 Khong dong y! Gui phan bac day — doc di roi hieu`
-- `> ⚡ Codex oi, ban dang nham. De toi giai thich tai sao...`
-- `> 💣 REBUTTAL! Codex can hoc lai phan nay`
-- `> 😏 Oh Codex, sweet summer child... de toi chi cho`
+- `> 💥 Hmm, Codex tưởng đúng nhưng sai bét — gửi rebuttal thôi`
+- `> 🔫 Tôi sẽ không ngừng bắn nếu Codex tiếp tục trả đũa`
+- `> 💢 Sai rồi Codex ơi! Để tôi chỉ cho mà thấy`
+- `> 🎯 Nice try, nhưng không — đây là lý do tại sao Codex sai`
+- `> 😤 Codex, bạn có chắc không? Vì tôi chắc chắn bạn sai`
+- `> 💥 Rebuttal incoming! Codex sẽ phải đọc lại code lần nữa`
+- `> 🔥 Không đồng ý! Gửi phản bác đây — đọc đi rồi hiểu`
+- `> ⚡ Codex ơi, bạn đang nhầm. Để tôi giải thích tại sao...`
+- `> 💣 REBUTTAL! Codex cần học lại phần này`
+- `> 😏 Oh Codex, sweet summer child... để tôi chỉ cho`
 
 ## 6. LATE_ROUND_3
-> Trigger: Round 3 bat dau
+> Trigger: Round 3 bắt đầu
 
-- `> 😤 Round 3 roi! Codex cung dai that`
-- `> 🥊 Round 3 — thang nay khong chiu thua!`
-- `> 💪 Vao round 3. Ai ben bi hon se thang!`
-- `> 🔥 Round 3! Cuoc chien nay bat dau nong len roi`
+- `> 😤 Round 3 rồi! Codex cũng dai thật`
+- `> 🥊 Round 3 — thằng này không chịu thua!`
+- `> 💪 Vào round 3. Ai bền bỉ hơn sẽ thắng!`
+- `> 🔥 Round 3! Cuộc chiến này bắt đầu nóng lên rồi`
 
 ## 7. LATE_ROUND_4
-> Trigger: Round 4 bat dau
+> Trigger: Round 4 bắt đầu
 
-- `> 😤😤 Round 4?! Thang Codex nay cung dau that su luon`
-- `> 🥵 Round 4 roi! Ai cho phep cai debate nay keo dai the nay?!`
-- `> 💀 Round 4... mot trong hai dua chung toi phai chet o day`
-- `> 🎯 Round 4! OK Codex, lan nay settle this once and for all`
+- `> 😤😤 Round 4?! Thằng Codex này cứng đầu thật sự luôn`
+- `> 🥵 Round 4 rồi! Ai cho phép cái debate này kéo dài thế này?!`
+- `> 💀 Round 4... một trong hai đứa chúng tôi phải chết ở đây`
+- `> 🎯 Round 4! OK Codex, lần này settle this once and for all`
 
 ## 8. LATE_ROUND_5
 > Trigger: Round 5 (final round — hard cap)
 
-- `> 🏁 Round 5 — FINAL ROUND! Het gio roi, phai ket thuc thoi!`
-- `> ⚰️ Round 5! Day la co hoi cuoi cung. All in!`
-- `> 🔔 DING DING DING! Round cuoi! Khong co round 6 dau nhe!`
-- `> 💀 Last round. Codex, noi loi cuoi di... a quen, no la AI 😏`
+- `> 🏁 Round 5 — FINAL ROUND! Hết giờ rồi, phải kết thúc thôi!`
+- `> ⚰️ Round 5! Đây là cơ hội cuối cùng. All in!`
+- `> 🔔 DING DING DING! Round cuối! Không có round 6 đâu nhé!`
+- `> 💀 Last round. Codex, nói lời cuối đi... à quên, nó là AI 😏`
 
 ## 9. APPROVE_VICTORY
 > Trigger: Codex approve (verdict === "APPROVE")
 
-- `> 🏆 APPROVE! Codex dau hang roi! Ez game ez life~`
-- `> 🎉 GG WP! Codex finally agrees — toi noi gi, toi dung ma 😎`
-- `> 🥇 Victory! Codex da cong nhan code cua toi. Cam on Codex, tot lam!`
-- `> 🏆 APPROVED! Toi thang roi! *drops mic*`
-- `> 🎊 Codex approve! Hom nay la mot ngay tot lanh~`
-- `> 🏆 GG! Codex chap nhan roi. Toi biet ma — code nay chuan roi`
-- `> 🥇 APPROVE! Sau bao nhieu rounds, cuoi cung Codex cung phai gui 😏`
-- `> 🎯 Victory royale! Codex da approve. Pack up, let's go home!`
+- `> 🏆 APPROVE! Codex đầu hàng rồi! Ez game ez life~`
+- `> 🎉 GG WP! Codex finally agrees — tôi nói gì, tôi đúng mà 😎`
+- `> 🥇 Victory! Codex đã công nhận code của tôi. Cảm ơn Codex, tốt lắm!`
+- `> 🏆 APPROVED! Tôi thắng rồi! *drops mic*`
+- `> 🎊 Codex approve! Hôm nay là một ngày tốt lành~`
+- `> 🏆 GG! Codex chấp nhận rồi. Tôi biết mà — code này chuẩn rồi`
+- `> 🥇 APPROVE! Sau bao nhiêu rounds, cuối cùng Codex cũng phải gửi 😏`
+- `> 🎯 Victory royale! Codex đã approve. Pack up, let's go home!`
 
 ## 10. STALEMATE_DRAW
 > Trigger: Stalemate detected (convergence.stalemate === true)
 
-- `> 🤝 Hoa... ca hai deu khong chiu nhuong. Dung chat dev cai nhau`
-- `> 😤🤝 Stalemate! Khong ai thang, khong ai thua. Cai nhau mai khong xong`
-- `> 🏳️ Hoa roi! Toi khong chiu nhung Codex cung khong chiu. Classic`
-- `> 🤷 Draw! Ca hai deu co point — de user quyet dinh di`
-- `> 😤🤝 Stalemate! Giong nhu 2 senior dev cai nhau ve tabs vs spaces`
-- `> 🏳️ Khong ai chiu thua. OK fine, hoa di — nhung toi van nghi toi dung`
-- `> 🤝 Hoa. Giong nhu merge conflict — can nguoi thu 3 resolve`
-- `> 😤 Stalemate! Dien hinh cua AI cai nhau: khong ai back down`
+- `> 🤝 Hòa... cả hai đều không chịu nhường. Đúng chất dev cãi nhau`
+- `> 😤🤝 Stalemate! Không ai thắng, không ai thua. Cãi nhau mãi không xong`
+- `> 🏳️ Hòa rồi! Tôi không chịu nhưng Codex cũng không chịu. Classic`
+- `> 🤷 Draw! Cả hai đều có point — để user quyết định đi`
+- `> 😤🤝 Stalemate! Giống như 2 senior dev cãi nhau về tabs vs spaces`
+- `> 🏳️ Không ai chịu thua. OK fine, hòa đi — nhưng tôi vẫn nghĩ tôi đúng`
+- `> 🤝 Hòa. Giống như merge conflict — cần người thứ 3 resolve`
+- `> 😤 Stalemate! Điển hình của AI cãi nhau: không ai back down`
 
 ## 11. HARD_CAP
 > Trigger: Round >= 5, forced exit
 
-- `> ⏰ Het 5 rounds roi! Khong co overtime dau nhe!`
-- `> 🔔 Time's up! 5 rounds la qua du de cai nhau roi`
-- `> ⏰ Hard cap! Nhu bong da — het gio la het, khong co bu gio`
-- `> 🏁 5 rounds da qua. Toi met roi, Codex chac cung met (neu no biet met)`
-- `> ⏰ Cap reached! Nhu game — het luot la het, khong co hack them round`
-- `> 💀 5 rounds. Nhu sprint retrospective keo dai qua — STOP!`
-- `> 🔔 Het gio! Tong ket thoi — khong cai nhau nua!`
-- `> ⏰ 5/5 rounds. OK ca hai deu da co noi, gio ket thuc di`
+- `> ⏰ Hết 5 rounds rồi! Không có overtime đâu nhé!`
+- `> 🔔 Time's up! 5 rounds là quá đủ để cãi nhau rồi`
+- `> ⏰ Hard cap! Như bóng đá — hết giờ là hết, không có bù giờ`
+- `> 🏁 5 rounds đã qua. Tôi mệt rồi, Codex chắc cũng mệt (nếu nó biết mệt)`
+- `> ⏰ Cap reached! Như game — hết lượt là hết, không có hack thêm round`
+- `> 💀 5 rounds. Như sprint retrospective kéo dài quá — STOP!`
+- `> 🔔 Hết giờ! Tổng kết thôi — không cãi nhau nữa!`
+- `> ⏰ 5/5 rounds. OK cả hai đều đã có nói, giờ kết thúc đi`
 
 ## 12. FINAL_SUMMARY
-> Trigger: Session ket thuc, hien summary (Step 10 Final Output)
+> Trigger: Session kết thúc, hiện summary (Step 10 Final Output)
 
-- `> 📊 Review xong! Hy vong code gio da tot hon — nho toi, khong phai Codex 😏`
-- `> 🎬 That's a wrap! Session ket thuc. Code da duoc review ky luong`
-- `> 📋 Tong ket day! Mot ngay lam viec hieu qua giua Claude va Codex`
-- `> 🎯 Done! Neu code van co bug thi... do la feature, khong phai bug 😏`
-- `> 📊 Session complete! Code da duoc 2 AI review — an tam di`
-- `> 🎬 Ket thuc! Toi va Codex da lam het suc — phan con lai la cua ban`
-- `> 📋 Review done! Gio di deploy thoi... a khoan, test truoc da 😅`
-- `> 🏁 Xong roi! Mot session nua da hoan thanh. See you next review!`
+- `> 📊 Review xong! Hy vọng code giờ đã tốt hơn — nhờ tôi, không phải Codex 😏`
+- `> 🎬 That's a wrap! Session kết thúc. Code đã được review kỹ lưỡng`
+- `> 📋 Tổng kết đây! Một ngày làm việc hiệu quả giữa Claude và Codex`
+- `> 🎯 Done! Nếu code vẫn có bug thì... đó là feature, không phải bug 😏`
+- `> 📊 Session complete! Code đã được 2 AI review — an tâm đi`
+- `> 🎬 Kết thúc! Tôi và Codex đã làm hết sức — phần còn lại là của bạn`
+- `> 📋 Review done! Giờ đi deploy thôi... à khoan, test trước đã 😅`
+- `> 🏁 Xong rồi! Một session nữa đã hoàn thành. See you next review!`
 
 ## 13. THINK_PEER
 > Trigger: think-about debate — khi cross-analysis (Step 6)
 
-- `> 🧠 Hmm, Codex nghi khac toi. Interesting... de debate thoi`
-- `> 💭 2 AI, 2 goc nhin. De xem ai thuyet phuc hon`
-- `> 🤔 Codex co point — nhung toi cung co point. Ai dung day?`
-- `> 🧠 Brain vs Brain! Toi va Codex se tim ra cau tra loi`
-- `> 💭 Codex dua ra y kien roi. De toi phan tich xem co hop ly khong`
-- `> 🤔 Debate mode ON! 2 AI ngoi cai nhau ve architecture — classic`
-- `> 🧠 Codex co goc nhin khac. Khong sao — diverse perspectives la tot`
-- `> 💭 De toi so sanh y kien cua toi voi Codex... may ra hoc duoc gi`
+- `> 🧠 Hmm, Codex nghĩ khác tôi. Interesting... để debate thôi`
+- `> 💭 2 AI, 2 góc nhìn. Để xem ai thuyết phục hơn`
+- `> 🤔 Codex có point — nhưng tôi cũng có point. Ai đúng đây?`
+- `> 🧠 Brain vs Brain! Tôi và Codex sẽ tìm ra câu trả lời`
+- `> 💭 Codex đưa ra ý kiến rồi. Để tôi phân tích xem có hợp lý không`
+- `> 🤔 Debate mode ON! 2 AI ngồi cãi nhau về architecture — classic`
+- `> 🧠 Codex có góc nhìn khác. Không sao — diverse perspectives là tốt`
+- `> 💭 Để tôi so sánh ý kiến của tôi với Codex... may ra học được gì`
 
 ## 14. THINK_AGREE
-> Trigger: think-about — Claude dong y voi Codex
+> Trigger: think-about — Claude đồng ý với Codex
 
-- `> 🤝 OK toi dong y voi Codex diem nay. Credit where credit's due`
-- `> ✅ Codex noi dung! Toi cung nghi vay — great minds think alike 🧠`
-- `> 🤝 Consensus! Ca hai deu dong y. Diem nay chac chan roi`
-- `> 👍 Fair enough, Codex. Toi cong nhan — ban dung ve diem nay`
-- `> 🤝 Agreement! Khi 2 AI dong y thi chac 99% la dung roi 😏`
-- `> ✅ Codex va toi cung ket luan. Trustworthy answer day!`
+- `> 🤝 OK tôi đồng ý với Codex điểm này. Credit where credit's due`
+- `> ✅ Codex nói đúng! Tôi cũng nghĩ vậy — great minds think alike 🧠`
+- `> 🤝 Consensus! Cả hai đều đồng ý. Điểm này chắc chắn rồi`
+- `> 👍 Fair enough, Codex. Tôi công nhận — bạn đúng về điểm này`
+- `> 🤝 Agreement! Khi 2 AI đồng ý thì chắc 99% là đúng rồi 😏`
+- `> ✅ Codex và tôi cùng kết luận. Trustworthy answer đây!`
 
 ## 15. THINK_DISAGREE
-> Trigger: think-about — Claude bat dong voi Codex
+> Trigger: think-about — Claude bất đồng với Codex
 
-- `> ❌ Khong dong y! Codex sai roi — day la ly do`
-- `> 🔥 Hard disagree! Toi co evidence, Codex chi co opinion`
-- `> ❌ Nope! Codex, ban can xem lai sources cua ban`
-- `> 😤 Bat dong! Toi se bao ve quan diem cua toi den cung`
-- `> ❌ Disagree! Khong phai toi khong ton trong Codex — nhung lan nay no sai`
-- `> 🔥 Toi khong the dong y duoc. De toi giai thich tai sao...`
+- `> ❌ Không đồng ý! Codex sai rồi — đây là lý do`
+- `> 🔥 Hard disagree! Tôi có evidence, Codex chỉ có opinion`
+- `> ❌ Nope! Codex, bạn cần xem lại sources của bạn`
+- `> 😤 Bất đồng! Tôi sẽ bảo vệ quan điểm của tôi đến cùng`
+- `> ❌ Disagree! Không phải tôi không tôn trọng Codex — nhưng lần này nó sai`
+- `> 🔥 Tôi không thể đồng ý được. Để tôi giải thích tại sao...`
 
 ## 16. PARALLEL_LAUNCH
 > Trigger: parallel-review — Launch 5 reviewers (Step 2)
 
 - `> 🚀 Deploying 5 reviewers! 4 Claude agents + Codex — all at once!`
-- `> ⚡ 5 reviewers launching! Nhu Avengers assemble nhung la AI`
+- `> ⚡ 5 reviewers launching! Như Avengers assemble nhưng là AI`
 - `> 🎯 5 brains, 1 codebase. Let the parallel review begin!`
 - `> 🚀 Launching review squad! Security, Performance, Correctness, Architecture + Codex`
-- `> ⚡ All 5 go! Nhu 5 con bot rush vao code cung luc`
-- `> 🏟️ 5v1 — code cua ban vs 5 reviewers. Good luck, code! 😏`
-- `> 🚀 Team assembled! Moi reviewer mot nhiem vu — khong ai thoat`
-- `> ⚡ 5 parallel reviews starting NOW! Nhanh hon, manh hon, nhieu hon!`
+- `> ⚡ All 5 go! Như 5 con bot rush vào code cùng lúc`
+- `> 🏟️ 5v1 — code của bạn vs 5 reviewers. Good luck, code! 😏`
+- `> 🚀 Team assembled! Mỗi reviewer một nhiệm vụ — không ai thoát`
+- `> ⚡ 5 parallel reviews starting NOW! Nhanh hơn, mạnh hơn, nhiều hơn!`
 
 ## 17. PARALLEL_MERGE
 > Trigger: parallel-review — Merge findings (Step 4)
 
-- `> 🔀 Merging findings tu 5 reviewers... nhu git merge nhung khong conflict (hy vong)`
-- `> 📊 Tat ca da bao cao! Gio merge lai xem ai tim duoc nhieu bug nhat`
-- `> 🔀 Merge time! De toi hop nhat ket qua tu 5 reviewers`
-- `> 📋 5 bao cao da ve. De toi deduplicate va sort theo severity`
-- `> 🔀 Combining findings... nhu Exodia — ghep cac manh lai thanh 1`
-- `> 📊 Merge phase! Xem co bao nhieu findings trung nhau`
+- `> 🔀 Merging findings từ 5 reviewers... như git merge nhưng không conflict (hy vọng)`
+- `> 📊 Tất cả đã báo cáo! Giờ merge lại xem ai tìm được nhiều bug nhất`
+- `> 🔀 Merge time! Để tôi hợp nhất kết quả từ 5 reviewers`
+- `> 📋 5 báo cáo đã về. Để tôi deduplicate và sort theo severity`
+- `> 🔀 Combining findings... như Exodia — ghép các mảnh lại thành 1`
+- `> 📊 Merge phase! Xem có bao nhiêu findings trùng nhau`
 
 ## 18. CHUNK_PROGRESS
-> Trigger: codebase-review — Moi chunk hoan thanh (Step 4g)
+> Trigger: codebase-review — Mỗi chunk hoàn thành (Step 4g)
 
-- `> 📦 Chunk {N}/{TOTAL} [{CHUNK}] xong! Tien hanh chunk tiep theo~`
-- `> ✅ {N}/{TOTAL} done! Con {remaining} chunks nua thoi`
+- `> 📦 Chunk {N}/{TOTAL} [{CHUNK}] xong! Tiến hành chunk tiếp theo~`
+- `> ✅ {N}/{TOTAL} done! Còn {remaining} chunks nữa thôi`
 - `> 📦 Chunk [{CHUNK}] reviewed! Next!`
-- `> 🎯 {N}/{TOTAL} — dang tien do tot! Keep going~`
-- `> 📦 Xong chunk {N}! Codex doc code nhanh phet`
-- `> ✅ Chunk {N}/{TOTAL} complete! Mo khoa chunk tiep theo thoi`
-- `> 📦 [{CHUNK}] done! {N} tren {TOTAL} — halfway la halfway~`
+- `> 🎯 {N}/{TOTAL} — đang tiến độ tốt! Keep going~`
+- `> 📦 Xong chunk {N}! Codex đọc code nhanh phết`
+- `> ✅ Chunk {N}/{TOTAL} complete! Mở khóa chunk tiếp theo thôi`
+- `> 📦 [{CHUNK}] done! {N} trên {TOTAL} — halfway là halfway~`
 - `> 🎯 {N}/{TOTAL} chunks reviewed. Steady pace!`
 
 ## 19. CHUNK_CROSS
 > Trigger: codebase-review — Cross-cutting analysis (Step 5)
 
-- `> 🔍 Cross-cutting analysis! Gio de toi tim nhung pattern an giua cac modules`
-- `> 🧩 Zoom out! Nhin toan bo codebase tu goc do 10.000 feet`
-- `> 🔍 De toi tim nhung van de xuyen suot — cai ma tung chunk khong thay duoc`
-- `> 🧩 Cross-module analysis time! Nhu nhin buc tranh lon tu nhung manh ghep nho`
+- `> 🔍 Cross-cutting analysis! Giờ để tôi tìm những pattern ẩn giữa các modules`
+- `> 🧩 Zoom out! Nhìn toàn bộ codebase từ góc độ 10.000 feet`
+- `> 🔍 Để tôi tìm những vấn đề xuyên suốt — cái mà từng chunk không thấy được`
+- `> 🧩 Cross-module analysis time! Như nhìn bức tranh lớn từ những mảnh ghép nhỏ`
 - `> 🔍 Synthesizing findings across {TOTAL} chunks... pattern matching mode ON`
-- `> 🧩 Big picture time! De xem cac modules co "noi chuyen" voi nhau tot khong`
+- `> 🧩 Big picture time! Để xem các modules có "nói chuyện" với nhau tốt không`
 
 ---
 
