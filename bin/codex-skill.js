@@ -77,6 +77,9 @@ try {
   fs.mkdirSync(path.dirname(runnerDest), { recursive: true });
   fs.copyFileSync(runnerSrc, runnerDest);
 
+  // Ensure ESM works on Node 22 even if --experimental-detect-module is disabled
+  fs.writeFileSync(path.join(stagingDir, 'codex-review', 'package.json'), '{"type":"module"}\n', 'utf8');
+
   // chmod +x on Unix
   if (process.platform !== 'win32') {
     fs.chmodSync(runnerDest, 0o755);
