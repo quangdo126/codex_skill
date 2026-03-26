@@ -45,7 +45,7 @@ Start: `printf '%s' "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$E
 Render template=`claude-analysis`, same placeholders. Analyze using own knowledge. MAY use MCP tools (web_search, context7). Analysis must be COMPLETE and FINAL before Step 4.
 
 ### 4. Poll -> Cross-Analysis -> Resume Loop
-Poll: `node "$RUNNER" poll "$SESSION_DIR"`. Report activities. Poll intervals: R1: 90s,60s,30s,15s+. R2+: 45s,30s,15s+.
+Poll: `node "$RUNNER" poll "$SESSION_DIR"`. Report activities. (-> `references/protocol.md` for intervals)
 Parse `review.insights`, `review.considerations`, `review.recommendations`, `review.sources`. Fallback: `review.raw_markdown`.
 Classify: Genuine Agreement, Genuine Disagreement, Claude-only Insight, Codex-only Insight, Same Direction Different Depth.
 Build response: Agreements, Disagreements (defend with evidence), New Perspectives, Source Cross-validation.
