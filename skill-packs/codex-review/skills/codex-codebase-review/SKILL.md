@@ -1,50 +1,80 @@
 ---
 name: codex-codebase-review
-description: Review entire codebases (50-500+ files) by chunking into modules, reviewing each chunk in a separate Codex session, then synthesizing cross-cutting findings. No runner changes needed.
+description: Review entire codebases (50-500+ files) by chunking into modules, reviewing each in separate Codex sessions, then synthesizing cross-cutting findings.
 ---
 
 # Codex Codebase Review
 
 ## Purpose
-Review large codebases (50-500+ files) that exceed single-session context limits. Splits codebase into module-based chunks, reviews each in an independent Codex session, then Claude synthesizes cross-cutting findings across modules.
+Review large codebases exceeding single-session context limits. Chunks by module, reviews independently, synthesizes cross-cutting findings.
+
+## When to Use
+Full codebase audit (50-500+ files). For diff review use `/codex-impl-review`.
 
 ## Prerequisites
 - Source files in working directory.
-- `codex` CLI is installed and authenticated.
-- `codex-review` skill pack is installed (`npx github:lploc94/codex_skill`).
 
 ## Runner
-
-```bash
 RUNNER="{{RUNNER_PATH}}"
-```
+SKILLS_DIR="{{SKILLS_DIR}}"
+json_esc() { printf '%s' "$1" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>process.stdout.write(JSON.stringify(d)))'; }
+
+## Critical Rules (DO NOT skip)
+- Stdin: `printf '%s' "$PROMPT" | node "$RUNNER" ...` -- NEVER `echo`. JSON via heredoc.
+- Validate: `init` output must start with `CODEX_SESSION:`. `start`/`resume` must return valid JSON. `CODEX_NOT_FOUND`->tell user install codex.
+- `status === "completed"` means **Codex's turn is done** -- NOT that the review is over. Parse results and continue.
+- Errors: `failed`->retry once, still fails->skip chunk. >50% failed->warn user. `timeout`->report partial. `stalled`+recoverable->`stop`->recovery `resume`->poll; not recoverable->report partial. Cleanup sequencing: `finalize`+`stop` ONLY after recovery resolves.
+- Cleanup: ALWAYS `finalize` + `stop` ALL tracked sessions, even on failure/timeout.
+- Runner manages all session state -- NEVER read/write session files manually.
+- For poll intervals and detailed error flows -> `Read references/protocol.md`
 
 ## Workflow
-1. **Collect inputs**: effort level, parallel factor, focus areas.
-2. **Discovery**: detect project type, list source files, identify module boundaries.
-3. **Chunking**: group files into 500-2000 line chunks, present chunk plan.
-4. **Review loop**: for each chunk — build prompt, `node "$RUNNER" start`, poll, parse ISSUE-{N}, propagate context.
-5. **Cross-cutting analysis**: Claude synthesizes all chunk findings — inconsistencies, API contracts, DRY violations, integration, architecture.
-6. **Validation** (effort >= high): feed CROSS-{N} findings to Codex for verification.
-7. **Final report**: overview table, per-module findings, cross-cutting findings, action items.
-8. **Cleanup**: stop ALL tracked STATE_DIRs — always runs regardless of outcome.
 
-### Effort Level Guide
-| Level    | Discovery        | Cross-cutting    | Validation   |
-|----------|------------------|------------------|--------------|
-| `low`    | Auto-detect only | Basic (2 cats)   | Skip         |
-| `medium` | Auto + confirm   | Standard (3 cats)| Skip         |
-| `high`   | Full + confirm   | Full (5 cats)    | 1 round      |
-| `xhigh`  | Full + suggest   | Full + arch      | 2 rounds     |
+### 1. Collect Inputs
+Effort: <50 files=`medium`, 50-200=`high`, >200=`xhigh`. Ask parallel factor (default 1), focus areas (default all).
+Effort levels: low=~10-20min/chunk, medium=~15-30min, high=~20-40min, xhigh=~30-60min.
 
-## Required References
-- Detailed orchestration: `references/workflow.md`
-- Prompt templates: `references/prompts.md`
-- Output contract: `references/output-format.md`
+### 2. Discovery
+2a) Detect project type from markers (package.json, go.mod, Cargo.toml, etc.).
+2b) List source files (extensions: js, ts, jsx, tsx, py, go, rs, java, cs, rb, php, vue, svelte). Exclude: node_modules, .git, dist, build, vendor, __pycache__, target, .next, .nuxt, coverage.
+2c) Identify module boundaries: group by top-level dir under source root (depth 2).
+2d) Count lines per module. 2e) Present module table for confirmation (effort >= medium).
+
+### 3. Chunking
+Target: 500-2000 lines/chunk. Module <300 lines -> merge with related. Module >2500 -> split by sub-dir.
+Order: config/types first -> core/utils -> features -> tests last. Present chunk plan (effort >= medium).
+
+### 4. Review Loop
+Track: `ALL_SESSION_DIRS=()`. For each chunk (sequential or parallel batches):
+4a) Init: `node "$RUNNER" init --skill-name codex-codebase-review --working-dir "$PWD"`. Track session.
+4b) Render: template=`chunk-review`. Placeholders: `PROJECT_TYPE`, `CHUNK_NAME`, `FOCUS_AREAS`, `FILE_LIST`, `CONTEXT_SUMMARY`.
+4c) Start + 4d) Poll (-> `references/protocol.md` for intervals). Report: "Chunk {N}/{TOTAL} [{name}]".
+4e) Parse `review.blocks[]`. 4f) Context propagation: high/critical findings (~2000 tokens cap).
+4g) Progress report. 4h) Finalize chunk.
+Parallel mode: batch by parallel_factor, start all simultaneously, poll round-robin, propagate context between batches only.
+
+### 5. Cross-cutting Analysis (Claude-only)
+Collect all ISSUE-{N} from all chunks -> group by file/category/severity -> find cross-module patterns -> generate CROSS-{N}.
+Categories by effort: pattern inconsistencies + DRY (all); API contracts (medium+); integration + architecture (high+).
+
+### 6. Validation (effort >= high)
+Init new session, render template=`validation` with `CROSS_FINDINGS`. Start + poll. Parse RESPONSE-{N} (accept/reject/revise).
+Rounds: high=1 max, xhigh=up to 2. Finalize validation session.
+
+### 7. Final Report
+Project type, Total files/lines, Chunks reviewed, Total issues, Cross-cutting findings.
+Per-module findings by severity, CROSS-{N} by category, architecture assessment (high+), action items (P0/P1/P2), per-chunk stats.
+
+### 8. Session Finalization
+Create master session, finalize with aggregated stats. Report master session path.
+
+### 9. Cleanup
+Stop ALL tracked sessions (chunk + validation + master). Always run.
+Chunk failure: retry once, skip on second fail. All failed: Claude fallback review top 5 chunks.
+
+## Flavor Text Triggers
+SKILL_START, POLL_WAITING, CODEX_RETURNED, CHUNK_PROGRESS, CHUNK_CROSS, FINAL_SUMMARY
 
 ## Rules
-- Codex reviews only; it does not edit files.
-- No cross-contamination between chunk sessions — each chunk is independent.
-- Context propagation: only high/critical findings from prior chunks, capped at ~2000 tokens.
-- Cleanup always runs — stop every tracked STATE_DIR regardless of outcome.
-- Scope is full codebase only — for diff review use `/codex-impl-review`.
+- If in plan mode, exit first. No cross-contamination between chunk sessions.
+- Context propagation: only high/critical, capped ~2000 tokens. Scope is full codebase only.

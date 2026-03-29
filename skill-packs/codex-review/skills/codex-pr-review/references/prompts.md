@@ -6,7 +6,7 @@
 |-------------|--------|----------|---------|
 | `{PR_TITLE}` | PR title from user or `gh pr view --json title` | No | "Not provided" |
 | `{PR_DESCRIPTION}` | PR description from user or `gh pr view --json body` | No | "Not provided" |
-| `{BASE_BRANCH}` | Validated base branch (see workflow.md §1) | Yes | — |
+| `{BASE_BRANCH}` | Validated base branch (see SKILL.md §1) | Yes | — |
 | `{COMMIT_COUNT}` | Number of commits: `git rev-list --count {BASE_BRANCH}..HEAD` | Yes | — |
 | `{COMMIT_LIST}` | Formatted list: `<SHA> <subject>` per commit from `git log {BASE_BRANCH}..HEAD --oneline` | Yes | — |
 | `{USER_REQUEST}` | User's task/request description | No | "Review this PR for quality and merge readiness" |
@@ -82,7 +82,7 @@ You are Codex acting as an equal peer reviewer of a pull request. Another review
 You are reviewing a pull request independently. Codex is reviewing the same PR separately — you will NOT see their findings until later.
 
 ## INFORMATION BARRIER
-- Do NOT read $STATE_DIR/review.md or any Codex output.
+- Do NOT read $SESSION_DIR/review.md or any Codex output.
 - Form your OWN conclusions based on the diff, commits, and PR metadata.
 - Commit to specific positions.
 
@@ -145,6 +145,7 @@ You are reviewing a pull request independently. Codex is reviewing the same PR s
 4. Never edit files or run git add/commit/rebase/reset — use read-only inspection commands only.
 5. Keep ISSUE-{N} numbering stable. New findings use the next available number.
 6. Use EXACT output format. You MUST include a VERDICT block.
+7. Respond with RESPONSE-{N} blocks. End with VERDICT: `CONSENSUS` only if all disagreements resolved. `CONTINUE` if any point still disputed. `STALEMATE` only if you have no new evidence to add. Claude will send another round if you return CONTINUE.
 
 ## Required Output Format
 {OUTPUT_FORMAT}

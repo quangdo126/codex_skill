@@ -77,26 +77,31 @@ try {
   fs.mkdirSync(path.dirname(runnerDest), { recursive: true });
   fs.copyFileSync(runnerSrc, runnerDest);
 
+  // Ensure ESM works on Node 22 even if --experimental-detect-module is disabled
+  fs.writeFileSync(path.join(stagingDir, 'codex-review', 'package.json'), '{"type":"module"}\n', 'utf8');
+
   // chmod +x on Unix
   if (process.platform !== 'win32') {
     fs.chmodSync(runnerDest, 0o755);
   }
 
-  // 2. Process each skill: inject RUNNER_PATH into SKILL.md, copy references/
+  // 2. Process each skill: inject RUNNER_PATH and SKILLS_DIR into SKILL.md, copy references/
   const escapedRunnerPath = escapeForDoubleQuotedShell(runnerPath);
+  const escapedSkillsRoot = escapeForDoubleQuotedShell(skillsRoot);
 
   for (const skill of SKILLS) {
     const skillSrcDir = path.join(skillPackDir, 'skills', skill);
     const skillDestDir = path.join(stagingDir, skill);
     fs.mkdirSync(skillDestDir, { recursive: true });
 
-    // Read template SKILL.md, inject runner path
+    // Read template SKILL.md, inject runner path and skills dir
     const templatePath = path.join(skillSrcDir, 'SKILL.md');
     const template = fs.readFileSync(templatePath, 'utf8');
     if (!template.includes('{{RUNNER_PATH}}')) {
       throw new Error(`Template ${skill}/SKILL.md missing {{RUNNER_PATH}} placeholder`);
     }
-    const injected = template.replaceAll('{{RUNNER_PATH}}', escapedRunnerPath);
+    let injected = template.replaceAll('{{RUNNER_PATH}}', escapedRunnerPath);
+    injected = injected.replaceAll('{{SKILLS_DIR}}', escapedSkillsRoot);
     if (injected.includes('{{RUNNER_PATH}}')) {
       throw new Error(`Template ${skill}/SKILL.md still contains {{RUNNER_PATH}} after injection`);
     }
@@ -108,6 +113,18 @@ try {
       throw new Error(`Missing references/ directory for ${skill}`);
     }
     copyDirSync(refsSrc, path.join(skillDestDir, 'references'));
+
+    // Copy shared files into skill's references/ (flavor-text.md, etc.)
+    const sharedDir = path.join(skillPackDir, 'shared');
+    if (fs.existsSync(sharedDir)) {
+      const skillRefsDir = path.join(skillDestDir, 'references');
+      for (const entry of fs.readdirSync(sharedDir)) {
+        const sharedFile = path.join(sharedDir, entry);
+        if (fs.statSync(sharedFile).isFile()) {
+          fs.copyFileSync(sharedFile, path.join(skillRefsDir, entry));
+        }
+      }
+    }
   }
 
   // 3. Verify runner works
@@ -118,6 +135,17 @@ try {
     timeout: 10_000,
   }).trim();
   console.log(`  codex-runner.js version: ${versionOutput}`);
+
+  // Check Codex CLI availability (warning only)
+  try {
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+    execFileSync(whichCmd, ['codex'], { encoding: 'utf8', timeout: 5000 });
+  } catch {
+    console.warn('');
+    console.warn('⚠️  Warning: codex CLI not found in PATH.');
+    console.warn('   Skills require the Codex CLI to run.');
+    console.warn('   Install: npm install -g @openai/codex');
+  }
 
   // 4. Atomic swap per directory: backup old → move staging → cleanup
   fs.mkdirSync(skillsRoot, { recursive: true });
@@ -190,7 +218,7 @@ try {
   console.log('  /codex-plan-review     — debate plans before implementation');
   console.log('  /codex-impl-review     — review uncommitted or branch changes');
   console.log('  /codex-think-about     — peer reasoning/debate');
-  console.log('  /codex-commit-review   — review commit messages');
+  console.log('  /codex-commit-review   — review committed code before push');
   console.log('  /codex-pr-review       — review PRs (branch diff + description)');
   if (fullMode) {
     console.log('  /codex-parallel-review — parallel dual-reviewer analysis + debate');
@@ -228,7 +256,7 @@ try {
         '| Plan/design document created or modified | `/codex-plan-review` | After writing plan | |',
         '| Auth, SQL, crypto, secrets, user input code | `/codex-security-review` | When security-sensitive code detected | Requires `-full` |',
         '| Large codebase (50+ files) needing review | `/codex-codebase-review` | On request for full review | Requires `-full` |',
-        '| Commit message drafted | `/codex-commit-review` | Before finalizing commit | |',
+        '| Recent commits before push | `/codex-commit-review` | After committing, before push | |',
         '| Technical question or architecture debate | `/codex-think-about` | On design discussions | |',
         '',
         '**Rules:**',

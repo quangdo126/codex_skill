@@ -1,108 +1,78 @@
 ---
 name: codex-security-review
-description: Security-focused code review using OWASP Top 10 and CWE patterns. Detects vulnerabilities, secrets, authentication issues, and security misconfigurations through static analysis.
+description: Security-focused code review using OWASP Top 10 and CWE patterns. Detects vulnerabilities through adversarial debate.
 ---
 
 # Codex Security Review
 
 ## Purpose
-Use this skill to perform security-focused review of code changes, identifying vulnerabilities aligned with OWASP Top 10 2021 and common CWE patterns.
+Security-focused review identifying vulnerabilities aligned with OWASP Top 10 2021 and common CWE patterns.
+
+## When to Use
+When changes touch auth, crypto, SQL, user input, file uploads, or APIs. Complements `/codex-impl-review`.
 
 ## Prerequisites
-- Working directory with source code
-- Optional: dependency manifest files (package.json, requirements.txt, go.mod) for supply chain analysis
-- `codex` CLI is installed and authenticated
-- `codex-review` skill pack is installed (`npx github:lploc94/codex_skill`)
+- Working directory with source code. Optional: dependency manifests for supply chain analysis.
 
 ## Runner
-
-```bash
 RUNNER="{{RUNNER_PATH}}"
-```
+SKILLS_DIR="{{SKILLS_DIR}}"
+json_esc() { printf '%s' "$1" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>process.stdout.write(JSON.stringify(d)))'; }
+
+## Critical Rules (DO NOT skip)
+- Stdin: `printf '%s' "$PROMPT" | node "$RUNNER" ...` -- NEVER `echo`. JSON via heredoc.
+- Validate: `init` output must start with `CODEX_SESSION:`. `start`/`resume` must return valid JSON. `CODEX_NOT_FOUND`->tell user install codex.
+- `status === "completed"` means **Codex's turn is done** -- NOT that the debate is over. MUST check Loop Decision table.
+- Loop: Do NOT exit unless APPROVE or stalemate. No round cap.
+- Errors: `failed`->retry once (re-poll 15s). `timeout`->report partial, suggest lower effort. `stalled`+recoverable->`stop`->recovery `resume`->poll; not recoverable->report partial. Cleanup sequencing: `finalize`+`stop` ONLY after recovery resolves.
+- Cleanup: ALWAYS run `finalize` + `stop`, even on failure/timeout.
+- Runner manages all session state -- NEVER read/write session files manually.
+- For poll intervals and detailed error flows -> `Read references/protocol.md`
 
 ## Workflow
-1. **Ask user** to choose review effort level: `low`, `medium`, `high`, or `xhigh` (default: `high`). Ask review scope: `working-tree` (uncommitted changes), `branch` (branch diff), or `full` (entire codebase). Set `EFFORT` and `SCOPE`.
-2. Build prompt from `references/prompts.md` (Security Review Prompt with OWASP checklist).
-3. Start round 1 with `node "$RUNNER" start --working-dir "$PWD" --effort "$EFFORT"`.
-4. Poll with adaptive intervals (Round 1: 60s/60s/30s/15s..., Round 2+: 30s/15s...). After each poll, report **specific activities** from poll output (e.g. which files Codex is analyzing, what vulnerability patterns it's checking). See `references/workflow.md` for parsing guide. NEVER report generic "Codex is running" — always extract concrete details.
-5. Parse security findings with `references/output-format.md` (includes CWE/OWASP mappings).
-6. Fix valid vulnerabilities in code; rebut false positives with evidence.
-7. Resume debate via `--thread-id` until `APPROVE` or stalemate.
-8. Return final security assessment with risk summary.
 
-### Effort Level Guide
-| Level    | Depth             | Best for                        |
-|----------|-------------------|---------------------------------|
-| `low`    | Common patterns   | Quick security sanity check     |
-| `medium` | OWASP Top 10      | Standard security review        |
-| `high`   | Deep analysis     | Pre-production security audit   |
-| `xhigh`  | Exhaustive        | Critical/regulated systems      |
+### 1. Collect Inputs
+Scope: working-tree (staged/unstaged), branch (diff vs base), or full (entire codebase). Auto-detect via `git status --short` and `git rev-list`.
+Effort: <10 files=`medium`, 10-50=`high`, >50=`xhigh`. Announce defaults.
+Scope guide: working-tree=pre-commit, branch=pre-merge, full=security audit.
 
-### Scope Guide
-| Scope          | Coverage                           | Best for                    |
-|----------------|------------------------------------|-----------------------------|
-| `working-tree` | Uncommitted changes only           | Pre-commit security check   |
-| `branch`       | Branch diff vs base                | Pre-merge security review   |
-| `full`         | Entire codebase                    | Security audit              |
+### 2. Pre-flight
+Working-tree: changes must exist. Branch: diff must exist. Full: no pre-flight needed.
 
-## Security Categories Covered
+### 3. Init + Render + Start
+Init: `node "$RUNNER" init --skill-name codex-security-review --working-dir "$PWD"`
+Render (nested): First render scope template (`working-tree`/`branch`/`full`) with `BASE_BRANCH`. Then render template=`round1` with `WORKING_DIR`, `SCOPE`, `EFFORT`, `BASE_BRANCH`, `SCOPE_SPECIFIC_INSTRUCTIONS`.
+Start: `printf '%s' "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"`
 
-### OWASP Top 10 2021
-- **A01:2021** - Broken Access Control
-- **A02:2021** - Cryptographic Failures
-- **A03:2021** - Injection (SQL, Command, XSS, etc.)
-- **A04:2021** - Insecure Design
-- **A05:2021** - Security Misconfiguration
-- **A06:2021** - Vulnerable and Outdated Components
-- **A07:2021** - Identification and Authentication Failures
-- **A08:2021** - Software and Data Integrity Failures
-- **A09:2021** - Security Logging and Monitoring Failures
-- **A10:2021** - Server-Side Request Forgery (SSRF)
+### 4. Poll -> Apply/Rebut -> Resume Loop
+Poll + report activities. (-> `references/protocol.md` for intervals)
+Parse `review.blocks[]` (id, title, severity, category, confidence, cwe, owasp, problem, evidence, attack_vector, suggested_fix). Risk summary in `review.verdict.risk_summary`. Fallback: `review.raw_markdown`.
+Present grouped by severity (Critical->High->Medium->Low). Critical/High=blocking; Medium/Low=advisory.
+- Valid -> fix vulnerabilities, verify fixes.
+- False positives -> rebut with mitigating controls.
+- Branch mode: commit fixes before resume.
+Render template=`round2+`, placeholders: `FIXED_ITEMS`, `DISPUTED_ITEMS`.
+Resume: `printf '%s' "$PROMPT" | node "$RUNNER" resume "$SESSION_DIR" --effort "$EFFORT"`. Back to Poll.
 
-### Additional Security Checks
-- Secrets/credentials in code
-- Hardcoded passwords and API keys
-- Insecure random number generation
-- Path traversal vulnerabilities
-- XML External Entity (XXE) attacks
-- Insecure deserialization
-- Missing security headers
-- CORS misconfigurations
+| # | Condition | Action |
+|---|-----------|--------|
+| 1 | verdict === "APPROVE" | EXIT -> step 5 |
+| 2 | convergence.stalemate === true | EXIT -> step 5 (stalemate) |
+| 3 | verdict === "REVISE" or open issues | CONTINUE -> Apply/Rebut |
 
-## Output Format
+### 5. Completion + Output
+APPROVE -> done. Stalemate -> present deadlocked issues, ask user.
+Report: Rounds, Verdict, Risk Level, Issues Found/Fixed/Disputed.
+Risk Summary: Critical/High/Medium/Low counts with fixed/open breakdown.
+Present: fixed vulnerabilities, disputed items, residual risks, blocking vs advisory, recommended next steps (dynamic testing, pentest).
 
-Each security finding includes:
-- **CWE ID**: Common Weakness Enumeration identifier
-- **OWASP Category**: OWASP Top 10 2021 mapping
-- **Severity**: `critical`, `high`, `medium`, `low`
-- **Confidence**: `high`, `medium`, `low` (static analysis confidence)
-- **Attack Vector**: How the vulnerability could be exploited
-- **Suggested Fix**: Secure code example
+### 6. Finalize + Cleanup
+`finalize` + `stop`. Always run. (-> `references/protocol.md` for error handling)
 
-See `references/output-format.md` for complete specification.
-
-## Important Limitations
-
-**This is static analysis only:**
-- ✅ Can detect: Code patterns, hardcoded secrets, common vulnerabilities
-- ❌ Cannot detect: Runtime behavior, memory leaks (need profiling), zero-days
-- ⚠️ Heuristic: Findings are AI-generated suggestions, not guaranteed vulnerabilities
-
-**Always:**
-- Verify findings manually before treating as confirmed vulnerabilities
-- Run dynamic security testing (DAST) for runtime issues
-- Use dedicated tools for dependency scanning (Snyk, Dependabot)
-- Consult security experts for critical systems
-
-## Required References
-- Detailed execution: `references/workflow.md`
-- Prompt templates: `references/prompts.md`
-- Output contract: `references/output-format.md`
+## Flavor Text Triggers
+SKILL_START, POLL_WAITING, CODEX_RETURNED, APPLY_FIX, SEND_REBUTTAL, LATE_ROUND, APPROVE_VICTORY, STALEMATE_DRAW, FINAL_SUMMARY
 
 ## Rules
-- Codex reviews only; it does not edit files
-- Mark all findings with confidence level (high/medium/low)
-- Provide CWE and OWASP mappings for all vulnerabilities
-- Include attack vector explanation for each finding
-- If stalemate persists, present both sides and defer to user
-- Never claim 100% security coverage - static analysis has limits
+- If in plan mode, exit first -- this skill requires code editing.
+- CWE + OWASP mappings for all findings. Include attack vector. Mark confidence level.
+- Every accepted issue -> concrete code diff. Never claim 100% security coverage.

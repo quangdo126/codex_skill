@@ -9,6 +9,8 @@
 | `{OUTPUT_FORMAT}` | Copy the entire fenced code block from `references/output-format.md` (the single block after "Use this exact shape") | Yes | — |
 | `{BASE_BRANCH}` | Base branch name (branch mode only) | Conditional | — |
 | `{REVIEW_SCOPE}` | Scope value for SESSION_CONTEXT fallback | No | `working-tree` or `branch diff against {BASE_BRANCH}` |
+| `{FIXED_ITEMS}` | Lines listing accepted+fixed issues (`ISSUE-N: title — fixed in file:line`) | No | "No issues fixed this round" |
+| `{DISPUTED_ITEMS}` | Lines listing disputed issues (`ISSUE-N: title — reason`) or "None — all issues addressed" | No | "None — all issues addressed" |
 
 ### SESSION_CONTEXT Schema
 
@@ -113,6 +115,7 @@ You are Codex acting as a strict code reviewer.
 6. Maintain the same ISSUE-{N} numbering. New findings use the next available number.
 7. Keep already-fixed issues closed.
 8. End with a VERDICT block.
+9. VERDICT rules: Return `APPROVE` ONLY if zero issues remain (all fixed or withdrawn). Return `REVISE` if ANY issue is still open or you found new issues. Claude will send another round if you return REVISE.
 
 ## Required Output Format
 {OUTPUT_FORMAT}
@@ -144,6 +147,7 @@ You are Codex acting as a strict code reviewer.
 6. Maintain the same ISSUE-{N} numbering. New findings use the next available number.
 7. Keep already-fixed issues closed.
 8. End with a VERDICT block.
+9. VERDICT rules: Return `APPROVE` ONLY if zero issues remain (all fixed or withdrawn). Return `REVISE` if ANY issue is still open or you found new issues. Claude will send another round if you return REVISE.
 
 ## Required Output Format
 {OUTPUT_FORMAT}

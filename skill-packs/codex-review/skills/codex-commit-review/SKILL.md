@@ -1,56 +1,76 @@
 ---
 name: codex-commit-review
-description: Peer debate between Claude Code and Codex on commit message quality. Both sides review independently, then debate until consensus — no modifications made.
+description: Peer debate between Claude Code and Codex on committed code quality. Report + suggest only, no modifications.
 ---
 
 # Codex Commit Review
 
 ## Purpose
-Use this skill to debate commit message quality before or after committing. Claude and Codex are equal analytical peers — Claude orchestrates the debate loop and final synthesis. No commit messages are modified.
+Debate committed code quality after committing, before pushing. No code modified -- report + suggest only.
+
+## When to Use
+After committing code (before push). Modes: staged (pre-commit preview) or last (already-committed).
 
 ## Prerequisites
-- **Draft mode**: user provides draft commit message text. Staged changes available for alignment check.
-- **Last mode**: recent commits exist (`git log -n N`). Repository has commit history.
-- `codex` CLI is installed and authenticated.
-- `codex-review` skill pack is installed (`npx github:lploc94/codex_skill`).
+- **Staged**: staged changes available (`git diff --cached`).
+- **Last**: recent commits exist.
 
 ## Runner
-
-```bash
 RUNNER="{{RUNNER_PATH}}"
-```
+SKILLS_DIR="{{SKILLS_DIR}}"
+json_esc() { printf '%s' "$1" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>process.stdout.write(JSON.stringify(d)))'; }
+
+## Critical Rules (DO NOT skip)
+- Stdin: `printf '%s' "$PROMPT" | node "$RUNNER" ...` -- NEVER `echo`. JSON via heredoc.
+- Validate: `init` output must start with `CODEX_SESSION:`. `start`/`resume` must return valid JSON. `CODEX_NOT_FOUND`->tell user install codex.
+- `status === "completed"` means **Codex's turn is done** -- NOT that the debate is over. MUST check Loop Decision table.
+- Loop: Do NOT exit unless consensus or stalemate. No round cap.
+- Errors: `failed`->retry once (re-poll 15s). `timeout`->report partial, suggest lower effort. `stalled`+recoverable->`stop`->recovery `resume`->poll; not recoverable->report partial. Cleanup sequencing: `finalize`+`stop` ONLY after recovery resolves.
+- Cleanup: ALWAYS run `finalize` + `stop`, even on failure/timeout.
+- Runner manages all session state -- NEVER read/write session files manually.
+- **Information barrier**: Claude MUST complete independent analysis BEFORE reading Codex output.
+- **NEVER modify code** -- report + suggest only.
+- For poll intervals and detailed error flows -> `Read references/protocol.md`
 
 ## Workflow
-1. **Ask user** to choose review effort level: `low`, `medium`, `high`, or `xhigh` (default: `medium`). Ask input source: `draft` (user provides message text) or `last` (review last N commits, default 1). Set `EFFORT` and `MODE`.
-2. Run pre-flight checks (see `references/workflow.md` §1.5).
-3. Build Codex prompt + Claude analysis prompt from `references/prompts.md`, following the Placeholder Injection Guide. **Start Codex** (background) with `node "$RUNNER" start`.
-4. **Claude Independent Analysis** (BEFORE reading Codex output): Claude analyzes commit message(s) independently using format from `references/claude-analysis-template.md`. **INFORMATION BARRIER** — do NOT read `$STATE_DIR/review.md` until analysis is complete. See `references/workflow.md` Step 2.5.
-5. Poll Codex with adaptive intervals (Round 1: 60s/60s/30s/15s..., Round 2+: 30s/15s...). After each poll, report **specific activities** from poll output. See `references/workflow.md` for parsing guide. NEVER report generic "Codex is running" — always extract concrete details.
-6. **Cross-Analysis**: Compare Claude's FINDING-{N} with Codex's ISSUE-{N}. Identify genuine agreements, genuine disagreements, and unique findings from each side. See `references/workflow.md` Step 4.
-7. Resume debate via `--thread-id` until consensus, stalemate, or hard cap (5 rounds).
-8. Present final consensus report with agreements, disagreements, and both sides' overall assessments. **NEVER propose revised commit messages.**
-9. Cleanup: `node "$RUNNER" stop "$STATE_DIR"`.
 
-### Effort Level Guide
-| Level    | Depth             | Best for                        | Typical time |
-|----------|-------------------|---------------------------------|-------------|
-| `low`    | Surface check     | Quick sanity check              | ~1-2 min |
-| `medium` | Standard review   | Most day-to-day work            | ~3-5 min |
-| `high`   | Deep analysis     | Important features              | ~5-10 min |
-| `xhigh`  | Exhaustive        | Critical/security-sensitive     | ~10-15 min |
+### 1. Collect Inputs
+Mode: `git diff --cached --quiet` exit 1=`staged`, exit 0=`last`. Effort: <=200 lines=`low`, 201-1000=`medium`, >1000=`high`.
+Staged: `git diff --cached`, files changed. Last: `git log -n N`, clamp N to history, diff.
+Context discovery: language/framework, linters, test frameworks, CI config.
 
-## Required References
-- Detailed execution: `references/workflow.md`
-- Prompt templates: `references/prompts.md`
-- Output contract: `references/output-format.md`
-- Claude analysis format: `references/claude-analysis-template.md`
+### 2. Init + Render + Start (Do NOT poll yet)
+Init: `node "$RUNNER" init --skill-name codex-commit-review --working-dir "$PWD"`
+Render: template=`staged-round1` or `last-round1`. Placeholders: `FILES_CHANGED`, `DIFF_CONTEXT`, `USER_REQUEST`, `SESSION_CONTEXT`, `PROJECT_CONTEXT`, `COMMIT_LIST` (last only).
+Start: `printf '%s' "$PROMPT" | node "$RUNNER" start "$SESSION_DIR" --effort "$EFFORT"`
+
+### 3. Claude Independent Analysis (BEFORE polling)
+**INFORMATION BARRIER**: MUST NOT read Codex output.
+Render: template=`claude-staged` or `claude-last`. Read diff/code, write FINDING-{N} per `references/claude-analysis-template.md`. Last mode: Evidence MUST reference SHA+subject. Overall Assessment + Strongest Positions. COMPLETE before Step 4.
+
+### 4. Poll -> Cross-Analysis -> Resume Loop
+Poll + report activities. (-> `references/protocol.md` for intervals)
+Parse `review.blocks[]` (id, title, severity, category, location, problem, evidence) + `review.overall_assessment`. Fallback: `review.raw_markdown`.
+Compare Claude FINDING-{N} vs Codex ISSUE-{N}: Agreement, Disagreement, Claude-only, Codex-only, Same Direction Different Severity.
+Build response: Agreements, Disagreements, New findings. Claude orchestration is authoritative -- Codex VERDICT is advisory.
+Render: template=`staged-round2+` or `last-round2+`. Placeholders: `SESSION_CONTEXT`, `PROJECT_CONTEXT`, `AGREED_POINTS`, `DISAGREED_POINTS`, `NEW_FINDINGS`, `CONTINUE_OR_CONSENSUS_OR_STALEMATE`, `DIFF_CONTEXT`, `COMMIT_LIST`.
+Resume + back to Poll.
+
+| # | Condition | Action |
+|---|-----------|--------|
+| 1 | Full/Partial Consensus (no severity >= medium disagreements) | EXIT -> step 5 |
+| 2 | convergence.stalemate === true | EXIT -> step 5 (stalemate) |
+| 3 | Disagreements severity >= medium remain | CONTINUE -> Cross-Analysis |
+
+### 5. Completion + Output
+Report: Rounds, Verdict, Claude/Codex Findings, Agreed/Disagreed counts, Files Reviewed, FINDING<->ISSUE Mapping, Overall Assessment (Code quality/Security/Test coverage/Maintainability).
+
+### 6. Finalize + Cleanup
+`finalize` + `stop`. Always run. (-> `references/protocol.md` for error handling)
+
+## Flavor Text Triggers
+SKILL_START, POLL_WAITING, CODEX_RETURNED, THINK_PEER, THINK_AGREE, THINK_DISAGREE, SEND_REBUTTAL, LATE_ROUND, APPROVE_VICTORY, STALEMATE_DRAW, FINAL_SUMMARY
 
 ## Rules
-- **Safety**: NEVER run `git commit --amend`, `git rebase`, or any command that modifies commit history. This skill is debate-only.
-- Both Claude and Codex are equal peers — no reviewer/implementer framing.
-- **Information barrier**: Claude MUST complete independent analysis (Step 2.5) before reading Codex output. This prevents anchoring bias.
-- **NEVER propose revised commit messages** — only debate quality. The final output is a consensus report, not a fix.
-- Codex reviews message quality only; it does not review code.
-- Discover project conventions before reviewing (see `references/workflow.md` §1.6).
-- For `last` mode with N > 1: findings must reference specific commit SHA/subject in Evidence.
-- If stalemate persists (same unresolved points for 2 consecutive rounds), present both sides and defer to user.
+- **Safety**: NEVER `git commit --amend`, `git rebase`, or modify commit history.
+- Both Claude and Codex are equal peers. For `last` mode N>1: reference specific commit SHA in Evidence.
